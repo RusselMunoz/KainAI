@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "953646495667",
+    "project_id": "cheffy-d7701",
+    "storage_bucket": "cheffy-d7701.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:953646495667:android:db1c4415d664cd50d67dc6",
+        "android_client_info": {
+          "package_name": "com.anonymous.KainAI"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "953646495667-lt8oouu1gl7982ki7uhbierg0616uhne.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdND0GiDdiUqTr4tLrH4XN8Q2cTIYfSms"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "953646495667-lt8oouu1gl7982ki7uhbierg0616uhne.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
