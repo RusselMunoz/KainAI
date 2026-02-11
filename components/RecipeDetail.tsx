@@ -43,10 +43,20 @@ export function RecipeDetail({
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
 
-  // Load any existing cooking progress on mount
+  // Reset state when recipe changes (fixes shared state bug)
   useEffect(() => {
+    setRecipe(initialRecipe);
+    setCookingMode(false);
+    setCookingProgress({
+      currentStep: -1,
+      completedSteps: [],
+      startedAt: null,
+      completedAt: null,
+    });
+    setShowRatingModal(false);
+    setSelectedRating(0);
     loadSavedProgress();
-  }, []);
+  }, [initialRecipe.id]);
 
   const loadSavedProgress = async () => {
     const savedProgress = await recipeService.getCookingProgress(userId, recipe.id);
@@ -71,6 +81,33 @@ export function RecipeDetail({
   };
 
   const toggleStepComplete = async (stepIndex: number) => {
+    // Bug 2 fix: Enforce sequential step completion
+    // Can only complete the next step in sequence, or toggle off a completed step
+    const isAlreadyCompleted = cookingProgress.completedSteps.includes(stepIndex);
+    
+    if (!isAlreadyCompleted) {
+      // Check if this is the next step in sequence
+      const expectedNextStep = cookingProgress.completedSteps.length;
+      if (stepIndex !== expectedNextStep) {
+        // Can't skip steps - show alert
+        Alert.alert(
+          'Complete steps in order',
+          `Please complete step ${expectedNextStep + 1} first before moving to step ${stepIndex + 1}.`
+        );
+        return;
+      }
+    } else {
+      // Unchecking a step - only allow unchecking the last completed step
+      const lastCompletedStep = Math.max(...cookingProgress.completedSteps);
+      if (stepIndex !== lastCompletedStep) {
+        Alert.alert(
+          'Cannot uncheck this step',
+          'You can only uncheck the most recently completed step.'
+        );
+        return;
+      }
+    }
+    
     const newProgress = await recipeService.toggleStepCompletion(
       userId,
       recipe.id,
@@ -131,6 +168,34 @@ export function RecipeDetail({
 <AntDesign name="left" size={24} color="#333" />
         </TouchableOpacity>
         <View style={styles.headerActions}>
+          {/* Delete button */}
+          <TouchableOpacity 
+            style={styles.deleteBtn}
+            onPress={() => {
+              Alert.alert(
+                'Delete Recipe',
+                'Are you sure you want to delete this recipe? This cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        await recipeService.deleteRecipe(userId, recipe.id);
+                        Alert.alert('Deleted', 'Recipe has been deleted.');
+                        onClose();
+                      } catch (error: any) {
+                        Alert.alert('Error', error.message || 'Failed to delete recipe');
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Feather name="trash-2" size={22} color="#ff4444" />
+          </TouchableOpacity>
           {recipe.status !== 'Done' && onSaveToArchive && (
             <TouchableOpacity 
               style={styles.saveBtn}
@@ -199,15 +264,23 @@ export function RecipeDetail({
         {/* Instructions Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>📝 Instructions</Text>
-          {recipe.instructions.map((instruction, index) => (
-            <InstructionStep
-              key={index}
-              instruction={instruction}
-              isCompleted={isStepCompleted(index)}
-              isCookingMode={cookingMode}
-              onToggle={() => toggleStepComplete(index)}
-            />
-          ))}
+          {recipe.instructions.map((instruction, index) => {
+            const nextStepIndex = cookingProgress.completedSteps.length;
+            const isNextStep = cookingMode && index === nextStepIndex;
+            const isLocked = cookingMode && index > nextStepIndex && !isStepCompleted(index);
+            
+            return (
+              <InstructionStep
+                key={`${recipe.id}-step-${index}`}
+                instruction={instruction}
+                isCompleted={isStepCompleted(index)}
+                isNextStep={isNextStep}
+                isLocked={isLocked}
+                isCookingMode={cookingMode}
+                onToggle={() => toggleStepComplete(index)}
+              />
+            );
+          })}
         </View>
 
         {/* Nutrition Information */}
@@ -346,11 +419,15 @@ function renderIngredientsByCategory(ingredients: Ingredient[]) {
 function InstructionStep({
   instruction,
   isCompleted,
+  isNextStep,
+  isLocked,
   isCookingMode,
   onToggle,
 }: {
   instruction: Instruction;
   isCompleted: boolean;
+  isNextStep?: boolean;
+  isLocked?: boolean;
   isCookingMode: boolean;
   onToggle: () => void;
 }) {
@@ -359,39 +436,55 @@ function InstructionStep({
       style={[
         styles.instructionCard,
         isCompleted && styles.instructionCompleted,
+        isNextStep && styles.instructionNextStep,
+        isLocked && styles.instructionLocked,
       ]}
       onPress={isCookingMode ? onToggle : undefined}
-      activeOpacity={isCookingMode ? 0.7 : 1}
+      activeOpacity={isCookingMode && !isLocked ? 0.7 : 1}
     >
       <View style={styles.instructionHeader}>
         <View style={[
           styles.stepNumber,
-          isCompleted && styles.stepNumberCompleted
+          isCompleted && styles.stepNumberCompleted,
+          isNextStep && styles.stepNumberNext,
+          isLocked && styles.stepNumberLocked,
         ]}>
           {isCompleted ? (
             <AntDesign name="check" size={14} color="#fff" />
+          ) : isLocked ? (
+            <AntDesign name="lock" size={12} color="#999" />
           ) : (
-            <Text style={styles.stepNumberText}>{instruction.stepNumber}</Text>
+            <Text style={[styles.stepNumberText, isNextStep && styles.stepNumberTextNext]}>
+              {instruction.stepNumber}
+            </Text>
           )}
         </View>
+        {isNextStep && (
+          <View style={styles.nextBadge}>
+            <Text style={styles.nextBadgeText}>NEXT</Text>
+          </View>
+        )}
         {instruction.timeMinutes && (
           <View style={styles.stepTime}>
-<Feather name="clock" size={12} color="#666" />
-            <Text style={styles.stepTimeText}>{instruction.timeMinutes} mins</Text>
+<Feather name="clock" size={12} color={isLocked ? "#ccc" : "#666"} />
+            <Text style={[styles.stepTimeText, isLocked && styles.lockedText]}>
+              {instruction.timeMinutes} mins
+            </Text>
           </View>
         )}
       </View>
       
       <Text style={[
         styles.instructionText,
-        isCompleted && styles.instructionTextCompleted
+        isCompleted && styles.instructionTextCompleted,
+        isLocked && styles.instructionTextLocked,
       ]}>
         {instruction.text}
       </Text>
 
       {instruction.tip && (
-        <View style={styles.tipBox}>
-          <Text style={styles.tipText}>💡 Tip: {instruction.tip}</Text>
+        <View style={[styles.tipBox, isLocked && styles.tipBoxLocked]}>
+          <Text style={[styles.tipText, isLocked && styles.lockedText]}>💡 Tip: {instruction.tip}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -439,6 +532,9 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     gap: 12,
+  },
+  deleteBtn: {
+    padding: 8,
   },
   saveBtn: {
     padding: 8,
@@ -595,6 +691,16 @@ const styles = StyleSheet.create({
     borderLeftColor: '#22c55e',
     opacity: 0.8,
   },
+  instructionNextStep: {
+    borderLeftColor: '#f59e0b',
+    borderLeftWidth: 6,
+    backgroundColor: '#fffbeb',
+  },
+  instructionLocked: {
+    backgroundColor: '#f5f5f5',
+    borderLeftColor: '#d1d5db',
+    opacity: 0.6,
+  },
   instructionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -612,10 +718,40 @@ const styles = StyleSheet.create({
   stepNumberCompleted: {
     backgroundColor: '#22c55e',
   },
+  stepNumberNext: {
+    backgroundColor: '#f59e0b',
+  },
+  stepNumberLocked: {
+    backgroundColor: '#e5e7eb',
+  },
   stepNumberText: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,
+  },
+  stepNumberTextNext: {
+    color: '#fff',
+  },
+  nextBadge: {
+    backgroundColor: '#f59e0b',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  nextBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  lockedText: {
+    color: '#9ca3af',
+  },
+  instructionTextLocked: {
+    color: '#9ca3af',
+  },
+  tipBoxLocked: {
+    backgroundColor: '#f3f4f6',
   },
   stepTime: {
     flexDirection: 'row',

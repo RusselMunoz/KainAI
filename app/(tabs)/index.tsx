@@ -20,6 +20,7 @@ import { ChatScreen } from '../chat';
 import RecipeDetail from '../../components/RecipeDetail';
 import { CommunityFeed, ShareSuccessModal } from '../../components/CommunityFeed';
 import recipeService from '../../services/recipe.service';
+import authService from '../../services/auth.service';
 import type { Recipe, TabName } from '../../types';
 
 const TABS = ['Chat', 'Recipes', 'Community', 'Awards'];
@@ -49,6 +50,25 @@ export default function Dashboard() {
   // User state
   const [userLevel, setUserLevel] = useState('Beginner');
   const [userXP, setUserXP] = useState(150);
+  const [userName, setUserName] = useState('User');
+
+  // Load user data on mount
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    try {
+      const user = await authService.getCurrentGoogleUser();
+      if (user?.displayName) {
+        // Get first name only
+        const firstName = user.displayName.split(' ')[0];
+        setUserName(firstName);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
 
   // Load recipes when switching to Recipes tab
   useEffect(() => {
@@ -108,7 +128,7 @@ export default function Dashboard() {
         <View style={styles.headerLeft}>
           <View style={styles.avatar} />
           <View style={{ marginLeft: 12 }}>
-            <Text style={styles.hello}>Hello, User!</Text>
+            <Text style={styles.hello}>Hello, {userName}!</Text>
             <Text style={styles.xpSmall}>{userLevel} • {userXP} XP</Text>
           </View>
         </View>

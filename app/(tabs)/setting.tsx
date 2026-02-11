@@ -74,6 +74,10 @@ export default function SettingsScreen() {
       router.push('/licenses');
       return;
     }
+    if (key === 'edit-profile') {
+      router.push('/edit-profile');
+      return;
+    }
     // Default: just log
     console.log('pressed', key);
   };

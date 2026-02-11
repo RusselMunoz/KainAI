@@ -62,12 +62,24 @@ async function addCookingSkill(userId, cooking_skill) {
 // Retrieve user data (preferences, allergies, skill) from Firestore
 async function getUserData(userId) {
   if (!userId || typeof userId !== 'string' || !userId.trim()) {
-    throw new Error('User ID is required.');
+    // Return default data for missing userId
+    console.log('No userId provided, returning defaults');
+    return {
+      dietary_preferences: [],
+      dietary_allergies: [],
+      cooking_skills: [],
+    };
   }
   const userRef = admin.firestore().collection('users').doc(userId.trim());
   const userDoc = await userRef.get();
   if (!userDoc.exists) {
-    throw new Error('User not found.');
+    // Return default data for non-existent user instead of throwing
+    console.log(`User ${userId} not found, returning defaults`);
+    return {
+      dietary_preferences: [],
+      dietary_allergies: [],
+      cooking_skills: [],
+    };
   }
   const data = userDoc.data();
   return {

@@ -2,6 +2,24 @@
 const admin = require('firebase-admin');
 const db = admin.firestore();
 
+// ==================== IN-MEMORY DEMO STORAGE ====================
+// Stores demo recipes in memory - cleared on server restart
+const demoRecipeStore = new Map();
+
+/**
+ * Check if this is a demo user
+ */
+function isDemoUser(userId) {
+  return userId && userId.startsWith('demo-');
+}
+
+/**
+ * Generate a unique demo recipe ID
+ */
+function generateDemoRecipeId() {
+  return 'demo-recipe-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+}
+
 /**
  * Parse AI-generated recipe text into structured format
  * @param {string} aiResponse - Raw AI response text
@@ -69,10 +87,15 @@ function parseAIRecipeResponse(aiResponse) {
     else if (lowerLine.includes('medium') || lowerLine.includes('moderate')) recipe.difficulty = 'Medium';
     else if (lowerLine.includes('hard') || lowerLine.includes('difficult')) recipe.difficulty = 'Hard';
 
-    // Parse calories
+    // Parse calories - handle multiple formats:
+    // "420 cal", "420 kcal", "Calories: 420", "Calories: 420 per serving"
     const calMatch = line.match(/(\d+)\s*(cal|kcal|calorie)/i);
+    const calMatch2 = line.match(/calorie[s]?[:\s]+?(\d+)/i);
     if (calMatch) {
       recipe.calories = parseInt(calMatch[1], 10);
+      recipe.nutrition.calories = recipe.calories;
+    } else if (calMatch2) {
+      recipe.calories = parseInt(calMatch2[1], 10);
       recipe.nutrition.calories = recipe.calories;
     }
 
@@ -207,7 +230,7 @@ function generateTags(recipe) {
 }
 
 /**
- * Save a new recipe to Firestore
+ * Save a new recipe to Firestore (or in-memory for demo users)
  * @param {string} userId - User's UID
  * @param {Object} recipeData - Parsed recipe data
  * @returns {Object} Created recipe with ID
@@ -238,7 +261,21 @@ async function saveRecipe(userId, recipeData) {
     lastCookedAt: null
   };
 
-  // Save to user's recipes subcollection
+  // Use in-memory storage for demo users (clears on server restart)
+  if (isDemoUser(userId)) {
+    recipe.id = generateDemoRecipeId();
+    
+    // Get or create user's recipe list
+    if (!demoRecipeStore.has(userId)) {
+      demoRecipeStore.set(userId, []);
+    }
+    demoRecipeStore.get(userId).unshift(recipe); // Add to beginning (newest first)
+    
+    console.log(`📝 Demo recipe saved in-memory: ${recipe.id} (total: ${demoRecipeStore.get(userId).length})`);
+    return recipe;
+  }
+
+  // For real users, save to Firestore
   const userRecipeRef = db.collection('users').doc(userId).collection('recipes').doc();
   recipe.id = userRecipeRef.id;
   await userRecipeRef.set(recipe);
@@ -252,6 +289,17 @@ async function saveRecipe(userId, recipeData) {
 async function getUserRecipes(userId, status = null) {
   if (!userId) throw new Error('User ID is required');
   
+  // Use in-memory storage for demo users
+  if (isDemoUser(userId)) {
+    let recipes = demoRecipeStore.get(userId) || [];
+    if (status) {
+      recipes = recipes.filter(r => r.status === status);
+    }
+    console.log(`📋 Demo user recipes fetched: ${recipes.length} recipes`);
+    return recipes;
+  }
+  
+  // For real users, query Firestore
   let query = db.collection('users').doc(userId).collection('recipes');
   
   if (status) {
@@ -270,6 +318,16 @@ async function getUserRecipes(userId, status = null) {
 async function getRecipe(userId, recipeId) {
   if (!userId || !recipeId) throw new Error('User ID and Recipe ID are required');
   
+  // Use in-memory storage for demo users
+  if (isDemoUser(userId)) {
+    const recipes = demoRecipeStore.get(userId) || [];
+    const recipe = recipes.find(r => r.id === recipeId);
+    if (!recipe) throw new Error('Recipe not found');
+    console.log(`🔍 Demo recipe fetched: ${recipeId}`);
+    return recipe;
+  }
+  
+  // For real users, query Firestore
   const doc = await db.collection('users').doc(userId).collection('recipes').doc(recipeId).get();
   
   if (!doc.exists) throw new Error('Recipe not found');
@@ -283,8 +341,29 @@ async function getRecipe(userId, recipeId) {
 async function updateCookingProgress(userId, recipeId, progressData) {
   if (!userId || !recipeId) throw new Error('User ID and Recipe ID are required');
   
-  const recipeRef = db.collection('users').doc(userId).collection('recipes').doc(recipeId);
   const now = admin.firestore.Timestamp.now();
+  
+  // Use in-memory storage for demo users
+  if (isDemoUser(userId)) {
+    const recipes = demoRecipeStore.get(userId) || [];
+    const recipe = recipes.find(r => r.id === recipeId);
+    if (!recipe) throw new Error('Recipe not found');
+    
+    recipe.cookingProgress.currentStep = progressData.currentStep;
+    recipe.cookingProgress.completedSteps = progressData.completedSteps;
+    recipe.updatedAt = now;
+    
+    if (progressData.startedAt) {
+      recipe.cookingProgress.startedAt = progressData.startedAt;
+      recipe.status = 'In Progress';
+    }
+    
+    console.log(`🍳 Demo recipe progress updated: ${recipeId}`);
+    return { success: true };
+  }
+  
+  // For real users, update Firestore
+  const recipeRef = db.collection('users').doc(userId).collection('recipes').doc(recipeId);
   
   const updates = {
     'cookingProgress.currentStep': progressData.currentStep,
@@ -310,11 +389,33 @@ async function completeRecipe(userId, recipeId, rating = null) {
   if (!userId || !recipeId) throw new Error('User ID and Recipe ID are required');
   
   const now = admin.firestore.Timestamp.now();
-  const batch = db.batch();
   
-  // Update recipe
+  // Use in-memory storage for demo users
+  if (isDemoUser(userId)) {
+    const recipes = demoRecipeStore.get(userId) || [];
+    const recipe = recipes.find(r => r.id === recipeId);
+    if (!recipe) throw new Error('Recipe not found');
+    
+    recipe.status = 'Done';
+    recipe.cookingProgress.completedAt = now;
+    recipe.userRating = rating;
+    recipe.lastCookedAt = now;
+    recipe.updatedAt = now;
+    
+    console.log(`✅ Demo recipe completed: ${recipeId}`);
+    return { success: true, newLevel: 'Beginner' };
+  }
+  
+  // For real users, update Firestore
   const recipeRef = db.collection('users').doc(userId).collection('recipes').doc(recipeId);
-  batch.update(recipeRef, {
+  
+  // Check if recipe exists
+  const recipeDoc = await recipeRef.get();
+  if (!recipeDoc.exists) {
+    throw new Error('Recipe not found');
+  }
+  
+  await recipeRef.update({
     status: 'Done',
     'cookingProgress.completedAt': now,
     userRating: rating,
@@ -322,26 +423,39 @@ async function completeRecipe(userId, recipeId, rating = null) {
     updatedAt: now
   });
   
-  // Update user stats
+  // Update user stats - use set with merge in case user doc doesn't exist (demo mode)
   const userRef = db.collection('users').doc(userId);
-  batch.update(userRef, {
-    recipesCompleted: admin.firestore.FieldValue.increment(1),
-    xp: admin.firestore.FieldValue.increment(50), // 50 XP per completed recipe
-    updated_at: now
-  });
-  
-  await batch.commit();
-  
-  // Calculate new level
   const userDoc = await userRef.get();
-  const userData = userDoc.data();
-  const newLevel = calculateLevel(userData.recipesCompleted || 0);
   
-  if (userData.level !== newLevel) {
-    await userRef.update({ level: newLevel });
+  let recipesCompleted = 1;
+  let currentXP = 50;
+  let currentLevel = 'Beginner';
+  
+  if (userDoc.exists) {
+    const userData = userDoc.data();
+    recipesCompleted = (userData.recipesCompleted || 0) + 1;
+    currentXP = (userData.xp || 0) + 50;
+    currentLevel = calculateLevel(recipesCompleted);
+    
+    await userRef.update({
+      recipesCompleted: recipesCompleted,
+      xp: currentXP,
+      level: currentLevel,
+      updated_at: now
+    });
+  } else {
+    // Create user document if it doesn't exist (demo mode)
+    currentLevel = calculateLevel(recipesCompleted);
+    await userRef.set({
+      recipesCompleted: recipesCompleted,
+      xp: currentXP,
+      level: currentLevel,
+      created_at: now,
+      updated_at: now
+    }, { merge: true });
   }
   
-  return { success: true, newLevel };
+  return { success: true, newLevel: currentLevel };
 }
 
 /**
@@ -393,6 +507,40 @@ async function copyRecipeToArchive(userId, originalRecipe, originalAuthorId) {
   return recipeCopy;
 }
 
+/**
+ * Delete a recipe
+ */
+async function deleteRecipe(userId, recipeId) {
+  if (!userId || !recipeId) throw new Error('User ID and Recipe ID are required');
+  
+  // Use in-memory storage for demo users
+  if (isDemoUser(userId)) {
+    const recipes = demoRecipeStore.get(userId) || [];
+    const index = recipes.findIndex(r => r.id === recipeId);
+    
+    if (index === -1) {
+      throw new Error('Recipe not found');
+    }
+    
+    recipes.splice(index, 1);
+    console.log(`🗑️ Demo recipe deleted: ${recipeId}`);
+    return { success: true };
+  }
+  
+  // For real users, delete from Firestore
+  const recipeRef = db.collection('users').doc(userId).collection('recipes').doc(recipeId);
+  
+  // Check if recipe exists
+  const doc = await recipeRef.get();
+  if (!doc.exists) {
+    throw new Error('Recipe not found');
+  }
+  
+  await recipeRef.delete();
+  console.log(`🗑️ Recipe deleted: ${recipeId}`);
+  return { success: true };
+}
+
 module.exports = {
   parseAIRecipeResponse,
   saveRecipe,
@@ -400,6 +548,7 @@ module.exports = {
   getRecipe,
   updateCookingProgress,
   completeRecipe,
+  deleteRecipe,
   copyRecipeToArchive,
   calculateLevel
 };

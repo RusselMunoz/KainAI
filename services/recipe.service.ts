@@ -264,6 +264,30 @@ class RecipeService {
   private async syncProgressToServer(userId: string, recipeId: string, progress: CookingProgress): Promise<void> {
     await axios.put(`${API_BASE}/api/recipes/${userId}/${recipeId}/progress`, progress);
   }
+
+  /**
+   * Delete a recipe
+   */
+  async deleteRecipe(userId: string, recipeId: string): Promise<boolean> {
+    try {
+      const response = await axios.delete(`${API_BASE}/api/recipes/${userId}/${recipeId}`);
+      
+      if (response.data.ok) {
+        // Also remove from local cache
+        const cached = await this.getCachedRecipes(userId);
+        const filtered = cached.filter(r => r.id !== recipeId);
+        await this.cacheRecipes(userId, filtered);
+        
+        console.log(`🗑️ Recipe deleted: ${recipeId}`);
+        return true;
+      }
+      
+      throw new Error(response.data.error || 'Failed to delete recipe');
+    } catch (error: any) {
+      console.error('Error deleting recipe:', error);
+      throw new Error(error.response?.data?.error || error.message || 'Failed to delete recipe');
+    }
+  }
 }
 
 export const recipeService = new RecipeService();

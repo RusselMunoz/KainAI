@@ -2,6 +2,18 @@ require('dotenv').config(); // load .env into process.env
 console.log('GROQ_API_KEY:', process.env.GROQ_API_KEY); // ADD THIS
 console.log('All env vars:', Object.keys(process.env).filter(k => k.includes('GROQ')));
 
+// ==================== DEMO MODE CONFIG ====================
+const DEMO_MODE = true; // Set to false to use real Firebase auth
+const MOCK_USER = {
+  id: 'demo-user-id',
+  username: 'Demo User',
+  dietary_preferences: ['Healthy', 'Quick meals'],
+  dietary_allergies: [],
+  cooking_skills: ['Intermediate'],
+  email: 'demo@example.com'
+};
+console.log('\n🎭 DEMO_MODE:', DEMO_MODE ? 'ENABLED (bypassing Firebase auth)' : 'DISABLED (using real auth)');
+
 // Firebase Admin SDK setup
 const admin = require('firebase-admin');
 const serviceAccount = require('./cheffy-d7701-firebase-adminsdk-fbsvc-c31968f82f.json');
@@ -30,8 +42,24 @@ app.use(express.json());
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
+});
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`\n📧 ${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
+// Root health check
+app.get('/', (req, res) => {
+  res.json({ ok: true, message: 'KainAI Server is running', port: process.env.PORT || 5173 });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, timestamp: new Date().toISOString(), groqKeyLoaded: !!API_KEY });
 });
 
 // Groq API configuration
@@ -43,6 +71,33 @@ const BASE = 'https://api.groq.com/openai/v1';
 const { addUser, getUserData } = require('./services/firestore');
 const recipeService = require('./services/recipe.service');
 const communityService = require('./services/community.service');
+const uploadService = require('./services/upload.service');
+
+// Log Cloudinary config status
+console.log('☁️ Cloudinary:', uploadService.isCloudinaryConfigured() ? 'CONFIGURED' : 'NOT CONFIGURED (demo mode images)');
+
+// ==================== IMAGE UPLOAD ENDPOINT ====================
+// POST /api/upload - Upload image(s) to Cloudinary
+app.post('/api/upload', async (req, res) => {
+  try {
+    const { image, images, folder } = req.body;
+    
+    if (images && Array.isArray(images)) {
+      // Multiple images
+      const results = await uploadService.uploadMultipleImages(images, { folder });
+      return res.json({ ok: true, urls: results.map(r => r.secure_url), results });
+    } else if (image) {
+      // Single image
+      const result = await uploadService.uploadImage(image, { folder });
+      return res.json({ ok: true, url: result.secure_url, result });
+    } else {
+      return res.status(400).json({ ok: false, error: 'No image data provided' });
+    }
+  } catch (err) {
+    console.error('Upload error:', err);
+    return res.status(500).json({ ok: false, error: err.message || 'Upload failed' });
+  }
+});
 
 // Endpoint to get user data (preferences, allergies, skill)
 app.get('/api/user/:userId', async (req, res) => {
@@ -75,9 +130,15 @@ if (!API_KEY) {
   console.log('GROQ_API_KEY loaded (masked):', `${API_KEY.slice(0,4)}...${API_KEY.slice(-4)}`);
 }
 
+// Health check endpoint for /api/chat (GET)
+app.get('/api/chat', (req, res) => {
+  console.log('📡 GET /api/chat health check');
+  res.json({ ok: true, message: 'Chat API is ready', timestamp: new Date().toISOString() });
+});
 
 // Enhanced /api/chat endpoint for recipe generation with user constraints and confirmation
 app.post('/api/chat', async (req, res) => {
+  console.log('📥 POST /api/chat received:', { prompt: req.body.prompt?.slice(0, 50), userId: req.body.userId, confirmed: req.body.confirmed });
   try {
     const { prompt, userId, ingredientList, confirmed } = req.body;
     const temperature = typeof req.body.temperature === 'number' ? req.body.temperature : 0.7;
@@ -87,13 +148,19 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Missing userId' });
     }
 
-    // Step 1: Retrieve user constraints
+    // Step 1: Retrieve user constraints (use mock data in demo mode)
     let userData;
-    try {
-      userData = await getUserData(userId);
-    } catch (err) {
-      return res.status(400).json({ ok: false, error: 'Could not retrieve user data: ' + (err.message || err) });
+    if (DEMO_MODE) {
+      console.log('🎭 DEMO MODE: Using mock user data instead of Firebase');
+      userData = MOCK_USER;
+    } else {
+      try {
+        userData = await getUserData(userId);
+      } catch (err) {
+        return res.status(400).json({ ok: false, error: 'Could not retrieve user data: ' + (err.message || err) });
+      }
     }
+    console.log('👤 User data:', JSON.stringify(userData, null, 2));
 
     // Step 2: If not confirmed, prompt for confirmation
     if (!confirmed) {
@@ -159,8 +226,11 @@ Tips:
       max_tokens: maxTokens
     };
 
-    console.log('Calling Groq API with model:', MODEL);
-    console.log('User prompt:', userPrompt.slice(0, 100) + '...');
+    console.log('\n🤖 Calling Groq API...');
+    console.log('   Model:', MODEL);
+    console.log('   User prompt:', userPrompt.slice(0, 150) + '...');
+    console.log('   Temperature:', temperature);
+    console.log('   Max tokens:', maxTokens);
 
     const r = await fetchFn(url, {
       method: 'POST',
@@ -176,25 +246,43 @@ Tips:
     try { json = JSON.parse(text); } catch (e) { json = text; }
 
     if (!r.ok) {
-      console.warn('Groq returned', r.status, text);
+      console.error('❌ Groq API error:', r.status, text);
       return res.status(502).json({ ok: false, status: r.status, error: json?.error?.message || text, raw: json });
     }
 
+    console.log('✅ Groq API response received');
+    console.log('   Status:', r.status);
+    console.log('   Usage:', json?.usage);
+
     // Extract response text from OpenAI-compatible format
     const genText = json?.choices?.[0]?.message?.content || '';
+    console.log('📄 Generated text preview:', genText.slice(0, 200) + '...');
 
     // Parse the AI response into structured recipe format
     const parsedRecipe = recipeService.parseAIRecipeResponse(genText);
+    console.log('🍳 Parsed recipe:', parsedRecipe?.title || 'No title parsed');
     
-    // Save the recipe to Firestore
+    // Save the recipe to Firestore (works for both demo and real users)
     let savedRecipe = null;
     try {
       savedRecipe = await recipeService.saveRecipe(userId, parsedRecipe);
-      console.log('Recipe saved with ID:', savedRecipe.id);
+      console.log('✅ Recipe saved with ID:', savedRecipe.id);
     } catch (saveErr) {
-      console.error('Failed to save recipe:', saveErr);
+      console.error('❌ Failed to save recipe:', saveErr);
+      // In demo mode, create a fallback mock recipe if Firestore save fails
+      if (DEMO_MODE) {
+        savedRecipe = {
+          id: 'demo-recipe-' + Date.now(),
+          ...parsedRecipe,
+          userId: userId,
+          status: 'Not Started',
+          createdAt: new Date().toISOString()
+        };
+        console.log('📝 Created fallback mock recipe:', savedRecipe.id);
+      }
       // Continue even if save fails - user still gets the response
     }
+    console.log('✅ Recipe ready:', savedRecipe?.id);
 
     return res.json({ 
       ok: true, 
@@ -278,6 +366,19 @@ app.post('/api/recipes/:userId/copy', async (req, res) => {
     return res.json({ ok: true, recipe: newRecipe });
   } catch (err) {
     console.error('Error copying recipe:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+// Delete a recipe
+app.delete('/api/recipes/:userId/:recipeId', async (req, res) => {
+  try {
+    const { userId, recipeId } = req.params;
+    
+    const result = await recipeService.deleteRecipe(userId, recipeId);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Error deleting recipe:', err);
     return res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });

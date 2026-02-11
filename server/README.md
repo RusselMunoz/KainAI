@@ -55,7 +55,7 @@ node server.js
 **Terminal 2 - Expo:**
 ```bash
 cd d:\VSCode\KainAI\KainAI
-npx expo start
+npx expo start --clear
 ```
 
 Then press `a` to open on Android emulator.

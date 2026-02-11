@@ -12,11 +12,13 @@ import {
   Image,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { AntDesign, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { CommunityPost, PostType, CommunityStats, Recipe } from '../types';
 import communityService from '../services/community.service';
 import recipeService from '../services/recipe.service';
+import uploadService from '../services/upload.service';
 
 const screenW = Dimensions.get('window').width;
 
@@ -390,22 +392,86 @@ export function ShareSuccessModal({
 }: ShareSuccessModalProps) {
   const [comment, setComment] = useState('');
   const [posting, setPosting] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (visible) {
+      setSelectedImages([]);
+      setComment('');
+    }
+  }, [visible]);
+
+  const handlePickImage = async () => {
+    if (selectedImages.length >= 4) {
+      Alert.alert('Limit Reached', 'You can add up to 4 photos');
+      return;
+    }
+
+    Alert.alert(
+      'Add Photo',
+      'Choose how you want to add a photo',
+      [
+        {
+          text: 'Take Photo',
+          onPress: async () => {
+            const uri = await uploadService.takePhoto();
+            if (uri) {
+              setSelectedImages(prev => [...prev, uri]);
+            }
+          },
+        },
+        {
+          text: 'Choose from Library',
+          onPress: async () => {
+            const uri = await uploadService.pickImage();
+            if (uri) {
+              setSelectedImages(prev => [...prev, uri]);
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleShare = async () => {
     if (!recipe) return;
     
     setPosting(true);
+
+    // Upload images first if any
+    let imageUrls: string[] = [];
+    if (selectedImages.length > 0) {
+      setUploadingImages(true);
+      const uploadResult = await uploadService.uploadMultipleImages(selectedImages);
+      setUploadingImages(false);
+      
+      if (uploadResult.ok && uploadResult.urls) {
+        imageUrls = uploadResult.urls;
+      } else {
+        Alert.alert('Warning', 'Failed to upload some images. Continuing without them.');
+      }
+    }
+
     const post = await communityService.shareRecipeSuccess(
       userId,
       recipe,
       rating,
       comment || `Just made ${recipe.title} and it turned out amazing!`,
+      imageUrls.length > 0 ? imageUrls : undefined,
     );
     setPosting(false);
 
     if (post) {
       Alert.alert('Success!', 'Your creation has been shared with the community!');
       setComment('');
+      setSelectedImages([]);
       onShare();
     } else {
       Alert.alert('Error', 'Failed to share. Please try again.');
@@ -444,6 +510,28 @@ export function ShareSuccessModal({
             </View>
           )}
 
+          {/* Image Picker Section */}
+          <Text style={styles.shareLabel}>Add photos (optional)</Text>
+          <View style={styles.imagePickerContainer}>
+            {selectedImages.map((uri, index) => (
+              <View key={index} style={styles.selectedImageWrapper}>
+                <Image source={{ uri }} style={styles.selectedImage} />
+                <TouchableOpacity 
+                  style={styles.removeImageBtn} 
+                  onPress={() => removeImage(index)}
+                >
+                  <AntDesign name="closecircle" size={20} color="#ff4444" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {selectedImages.length < 4 && (
+              <TouchableOpacity style={styles.addImageBtn} onPress={handlePickImage}>
+                <Feather name="camera" size={24} color="#ff8a3d" />
+                <Text style={styles.addImageText}>Add</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <Text style={styles.shareLabel}>Add a comment (optional)</Text>
           <TextInput
             style={styles.commentInput}
@@ -456,7 +544,21 @@ export function ShareSuccessModal({
           />
 
           <View style={styles.shareModalActions}>
-            <TouchableOpacity style={styles.skipBtn} onPress={onClose}>
+            <TouchableOpacity 
+              style={styles.skipBtn} 
+              onPress={async () => {
+                if (recipe) {
+                  await communityService.saveForLater(recipe, rating);
+                  Alert.alert(
+                    'Saved for Later',
+                    "You can share this recipe anytime from your profile's Pending Shares.",
+                    [{ text: 'OK', onPress: onClose }]
+                  );
+                } else {
+                  onClose();
+                }
+              }}
+            >
               <Text style={styles.skipBtnText}>Maybe Later</Text>
             </TouchableOpacity>
             <TouchableOpacity 
@@ -464,9 +566,13 @@ export function ShareSuccessModal({
               onPress={handleShare}
               disabled={posting}
             >
-              <Feather name="send" size={18} color="#fff" />
+              {uploadingImages ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Feather name="send" size={18} color="#fff" />
+              )}
               <Text style={styles.shareBtnText}>
-                {posting ? 'Sharing...' : 'Share'}
+                {uploadingImages ? 'Uploading...' : posting ? 'Sharing...' : 'Share'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -868,6 +974,43 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#fff',
+  },
+  // Image Picker Styles
+  imagePickerContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  selectedImageWrapper: {
+    position: 'relative',
+  },
+  selectedImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+  },
+  removeImageBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+  },
+  addImageBtn: {
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#ff8a3d',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addImageText: {
+    fontSize: 12,
+    color: '#ff8a3d',
+    marginTop: 2,
   },
 });
 

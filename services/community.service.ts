@@ -1,6 +1,7 @@
 // services/community.service.ts - Client-side community service
 import { Platform } from 'react-native';
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { 
   CommunityPost, 
   Comment, 
@@ -8,6 +9,17 @@ import type {
   PostType,
   Recipe 
 } from '../types';
+
+// Storage key for pending shares
+const PENDING_SHARES_KEY = '@community_pending_shares';
+
+// Pending share type
+export interface PendingShare {
+  recipeId: string;
+  recipeTitle: string;
+  rating: number;
+  savedAt: string;
+}
 
 // API base URL
 const API_BASE = Platform.select({
@@ -331,6 +343,78 @@ class CommunityService {
    */
   hasUserSaved(post: CommunityPost, userId: string): boolean {
     return post.savedBy.includes(userId);
+  }
+
+  // ==================== PENDING SHARES ====================
+  
+  /**
+   * Save a recipe for sharing later (Maybe Later)
+   */
+  async saveForLater(recipe: Recipe, rating: number): Promise<boolean> {
+    try {
+      const pending = await this.getPendingShares();
+      
+      // Check if already saved
+      if (pending.some(p => p.recipeId === recipe.id)) {
+        return true; // Already saved
+      }
+
+      const newPending: PendingShare = {
+        recipeId: recipe.id,
+        recipeTitle: recipe.title,
+        rating,
+        savedAt: new Date().toISOString(),
+      };
+
+      pending.push(newPending);
+      await AsyncStorage.setItem(PENDING_SHARES_KEY, JSON.stringify(pending));
+      console.log(`📌 Recipe saved for later sharing: ${recipe.title}`);
+      return true;
+    } catch (error) {
+      console.error('Error saving for later:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get all pending shares
+   */
+  async getPendingShares(): Promise<PendingShare[]> {
+    try {
+      const data = await AsyncStorage.getItem(PENDING_SHARES_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.error('Error getting pending shares:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Remove a pending share (after sharing or dismissing)
+   */
+  async removePendingShare(recipeId: string): Promise<boolean> {
+    try {
+      const pending = await this.getPendingShares();
+      const filtered = pending.filter(p => p.recipeId !== recipeId);
+      await AsyncStorage.setItem(PENDING_SHARES_KEY, JSON.stringify(filtered));
+      return true;
+    } catch (error) {
+      console.error('Error removing pending share:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Clear all pending shares
+   */
+  async clearPendingShares(): Promise<boolean> {
+    try {
+      await AsyncStorage.removeItem(PENDING_SHARES_KEY);
+      return true;
+    } catch (error) {
+      console.error('Error clearing pending shares:', error);
+      return false;
+    }
   }
 
   /**
