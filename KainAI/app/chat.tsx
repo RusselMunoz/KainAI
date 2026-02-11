@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Platform, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Platform, View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { GiftedChat, IMessage } from 'react-native-gifted-chat';
 import axios from 'axios';
 
@@ -11,7 +11,11 @@ const API_BASE = Platform.select({
   default: 'http://localhost:5173',
 });
 
-export function ChatScreen() {
+interface ChatScreenProps {
+  onRecipeGenerated?: (recipeId: string) => void;
+}
+
+export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   const [messages, setMessages] = useState<IMessage[]>([
     {
       _id: 'welcome',
@@ -97,6 +101,27 @@ export function ChatScreen() {
       let botText = '';
       if (data.ok && data.response) {
         botText = data.response;
+        
+        // If a recipe was generated and saved, notify parent to switch tabs
+        if (data.recipeId && data.navigateTo === 'Recipes') {
+          // Add a success message
+          const successMessage: IMessage = {
+            _id: Math.random().toString(36).substring(2),
+            text: '✨ Recipe saved to your archive! Tap below to view it.',
+            createdAt: new Date(),
+            user: { _id: 2, name: 'Cheffy' },
+          };
+          setMessages((previousMessages: IMessage[]) =>
+            GiftedChat.append(previousMessages, [successMessage]),
+          );
+          
+          // Notify parent after a short delay
+          setTimeout(() => {
+            if (onRecipeGenerated) {
+              onRecipeGenerated(data.recipeId);
+            }
+          }, 1500);
+        }
       } else if (data.error) {
         botText = `Error: ${data.error}`;
       } else {

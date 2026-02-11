@@ -5,8 +5,8 @@ import React, { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import AuthService from './services/auth.service';
-import { configureGoogleSignIn } from './config/google-signin';
+import AuthService from '../services/auth.service';
+import { configureGoogleSignIn } from '../config/google-signin';
 
 export default function SignIn() {
   const router = useRouter();
