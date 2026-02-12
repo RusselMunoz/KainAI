@@ -61,17 +61,26 @@ export default function SettingsScreen() {
   };
 
   const onPressItem = (key: string) => {
+    // Navigation for Profile & Health section
+    if (key === 'data-sharing') {
+      router.push('/privacy_and_data_section/data-sharing');
+      return;
+    }
+    if (key === 'health-data') {
+      router.push('/privacy_and_data_section/health-data');
+      return;
+    }
     // Navigation for Legal & Info section
     if (key === 'privacy-policy') {
-      router.push('/privacy-policy');
+      router.push('/legal_andinfo_section/privacy-policy');
       return;
     }
     if (key === 'terms') {
-      router.push('/terms');
+      router.push('/legal_andinfo_section/terms');
       return;
     }
     if (key === 'licenses') {
-      router.push('/licenses');
+      router.push('/legal_andinfo_section/licenses');
       return;
     }
     if (key === 'edit-profile') {

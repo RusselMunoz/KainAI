@@ -140,12 +140,35 @@ app.get('/api/chat', (req, res) => {
 app.post('/api/chat', async (req, res) => {
   console.log('📥 POST /api/chat received:', { prompt: req.body.prompt?.slice(0, 50), userId: req.body.userId, confirmed: req.body.confirmed });
   try {
-    const { prompt, userId, ingredientList, confirmed } = req.body;
+    let { prompt, userId, ingredientList, confirmed } = req.body;
     const temperature = typeof req.body.temperature === 'number' ? req.body.temperature : 0.7;
     const maxTokens = req.body.maxTokens || 1024;
 
     if (!userId) {
       return res.status(400).json({ ok: false, error: 'Missing userId' });
+    }
+
+    // Server-side profanity filter for ingredients
+    if (ingredientList && Array.isArray(ingredientList)) {
+      const profanityList = ['shit', 'fuck', 'damn', 'ass', 'bitch', 'bastard', 'dick', 'cock', 
+        'pussy', 'cunt', 'piss', 'fag', 'whore', 'slut', 'nigger', 'nigga', 'retard', 'faggot'];
+      const whitelist = ['shiitake', 'shitake', 'bass', 'grass', 'class', 'pass', 'mass',
+        'cocktail', 'cocoa', 'coconut', 'buttermilk', 'butter', 'butternut'];
+      
+      ingredientList = ingredientList.filter(ingredient => {
+        const lower = ingredient.toLowerCase();
+        // Allow whitelisted words
+        if (whitelist.some(w => lower.includes(w))) return true;
+        // Block profanity
+        for (const bad of profanityList) {
+          const regex = new RegExp(`\\b${bad}\\b`, 'i');
+          if (regex.test(ingredient)) {
+            console.log(`⚠️ Server blocked profane ingredient: "${ingredient}"`);
+            return false;
+          }
+        }
+        return true;
+      });
     }
 
     // Step 1: Retrieve user constraints (use mock data in demo mode)
@@ -187,7 +210,9 @@ Recipe: [Title]
 
 Description: [Brief description of the dish]
 
-Cooking Time: [X] minutes
+Prep Time: [X] minutes
+Cook Time: [X] minutes
+Total Time: [X] minutes
 Servings: [X]
 Difficulty: [Easy/Medium/Hard]
 Calories: [X] per serving

@@ -32,7 +32,9 @@ function parseAIRecipeResponse(aiResponse) {
     description: '',
     ingredients: [],
     instructions: [],
-    cookTime: 30,
+    prepTime: 10,
+    cookTime: 20,
+    totalTime: 30,
     servings: 4,
     difficulty: 'Easy',
     calories: 0,
@@ -70,10 +72,20 @@ function parseAIRecipeResponse(aiResponse) {
       continue;
     }
 
-    // Parse cooking time
+    // Parse cooking time - handle prep time, cook time, and total time
     const timeMatch = line.match(/(\d+)\s*(min|minute)/i);
-    if (timeMatch && (lowerLine.includes('cook') || lowerLine.includes('time') || lowerLine.includes('prep'))) {
-      recipe.cookTime = parseInt(timeMatch[1], 10);
+    if (timeMatch) {
+      const timeValue = parseInt(timeMatch[1], 10);
+      if (lowerLine.includes('prep')) {
+        recipe.prepTime = timeValue;
+      } else if (lowerLine.includes('cook') && !lowerLine.includes('total')) {
+        recipe.cookTime = timeValue;
+      } else if (lowerLine.includes('total')) {
+        recipe.totalTime = timeValue;
+      } else if (lowerLine.includes('time')) {
+        // Generic "time" - assume cook time
+        recipe.cookTime = timeValue;
+      }
     }
 
     // Parse servings
@@ -89,13 +101,25 @@ function parseAIRecipeResponse(aiResponse) {
 
     // Parse calories - handle multiple formats:
     // "420 cal", "420 kcal", "Calories: 420", "Calories: 420 per serving"
-    const calMatch = line.match(/(\d+)\s*(cal|kcal|calorie)/i);
-    const calMatch2 = line.match(/calorie[s]?[:\s]+?(\d+)/i);
+    // Also handle comma-separated numbers like "1,200"
+    const calMatch = line.match(/(\d[,\d]*)\s*(cal|kcal|calorie)/i);
+    const calMatch2 = line.match(/calorie[s]?[:\s]+?(\d[,\d]*)/i);
     if (calMatch) {
-      recipe.calories = parseInt(calMatch[1], 10);
+      let parsedCal = parseInt(calMatch[1].replace(/,/g, ''), 10);
+      // Validate: per-serving should be 50-1500 range for most recipes
+      // If it's too high, it might be total calories - divide by servings
+      if (parsedCal > 1500 && recipe.servings > 1) {
+        parsedCal = Math.round(parsedCal / recipe.servings);
+      }
+      // Cap at reasonable max (1500 cal per serving is high but possible)
+      recipe.calories = Math.min(parsedCal, 1500);
       recipe.nutrition.calories = recipe.calories;
     } else if (calMatch2) {
-      recipe.calories = parseInt(calMatch2[1], 10);
+      let parsedCal = parseInt(calMatch2[1].replace(/,/g, ''), 10);
+      if (parsedCal > 1500 && recipe.servings > 1) {
+        parsedCal = Math.round(parsedCal / recipe.servings);
+      }
+      recipe.calories = Math.min(parsedCal, 1500);
       recipe.nutrition.calories = recipe.calories;
     }
 
@@ -123,12 +147,23 @@ function parseAIRecipeResponse(aiResponse) {
     }
   }
 
+  // Calculate totalTime if not explicitly provided
+  if (!recipe.totalTime || recipe.totalTime === 30) {
+    recipe.totalTime = recipe.prepTime + recipe.cookTime;
+  }
+
+  // Estimate calories if not parsed from AI response
+  if (!recipe.calories || recipe.calories === 0) {
+    recipe.calories = estimateCalories(recipe.ingredients);
+    recipe.nutrition.calories = recipe.calories;
+  }
+
   // Generate tags from ingredients and title
   recipe.tags = generateTags(recipe);
 
   // Set description if not found
   if (!recipe.description) {
-    recipe.description = `A delicious ${recipe.difficulty.toLowerCase()} recipe that serves ${recipe.servings} and takes about ${recipe.cookTime} minutes to prepare.`;
+    recipe.description = `A delicious ${recipe.difficulty.toLowerCase()} recipe that serves ${recipe.servings}. Prep: ${recipe.prepTime} mins, Cook: ${recipe.cookTime} mins.`;
   }
 
   return recipe;
@@ -183,6 +218,51 @@ function categorizeIngredient(ingredientName) {
 }
 
 /**
+ * Estimate calories based on ingredients when AI doesn't provide them
+ * Returns estimated calories per serving
+ */
+function estimateCalories(ingredients) {
+  // Approximate calories per ingredient type (very rough estimates)
+  const calorieEstimates = {
+    // Proteins (per typical serving)
+    'chicken': 200, 'beef': 250, 'pork': 230, 'fish': 150, 'salmon': 200,
+    'shrimp': 100, 'tofu': 80, 'egg': 70, 'turkey': 180, 'lamb': 250, 'tuna': 120,
+    // Grains (per cup cooked)
+    'rice': 200, 'pasta': 220, 'noodle': 200, 'bread': 80, 'flour': 50,
+    'quinoa': 180, 'oat': 150,
+    // Vegetables (generally low)
+    'onion': 30, 'tomato': 20, 'potato': 150, 'carrot': 25, 'pepper': 20,
+    'broccoli': 30, 'spinach': 10, 'lettuce': 10, 'celery': 10, 'mushroom': 20,
+    // Fats/oils
+    'oil': 120, 'butter': 100, 'cheese': 110, 'cream': 80,
+    // Default for unrecognized
+    'default': 30
+  };
+
+  let totalCalories = 0;
+  
+  for (const ingredient of ingredients) {
+    const name = ingredient.name.toLowerCase();
+    let found = false;
+    
+    for (const [key, calories] of Object.entries(calorieEstimates)) {
+      if (name.includes(key)) {
+        totalCalories += calories;
+        found = true;
+        break;
+      }
+    }
+    
+    if (!found) {
+      totalCalories += calorieEstimates.default;
+    }
+  }
+
+  // Return reasonable estimate (minimum 100, cap at 800 for estimation)
+  return Math.max(100, Math.min(totalCalories, 800));
+}
+
+/**
  * Parse a single instruction step
  */
 function parseInstruction(line, stepNumber) {
@@ -209,9 +289,11 @@ function generateTags(recipe) {
   // Add difficulty
   tags.push(recipe.difficulty);
   
-  // Add time-based tags
-  if (recipe.cookTime <= 20) tags.push('Quick');
-  if (recipe.cookTime <= 30) tags.push('30-Minutes');
+  // Add time-based tags (use totalTime for accurate categorization)
+  const totalTime = recipe.totalTime || (recipe.prepTime + recipe.cookTime);
+  if (totalTime <= 20) tags.push('Quick');
+  if (totalTime <= 30) tags.push('30-Minutes');
+  if (totalTime <= 15) tags.push('15-Minutes');
   
   // Add ingredient-based tags
   const ingredientNames = recipe.ingredients.map(i => i.name.toLowerCase()).join(' ');

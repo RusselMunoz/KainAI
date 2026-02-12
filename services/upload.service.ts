@@ -78,13 +78,17 @@ export async function pickImage(): Promise<string | null> {
     allowsEditing: true,
     aspect: [4, 3],
     quality: 0.8,
-    base64: false,
+    base64: true, // Enable base64 to avoid file system issues
   });
 
   if (result.canceled || !result.assets[0]) {
     return null;
   }
 
+  // Return base64 directly if available, otherwise URI
+  if (result.assets[0].base64) {
+    return `data:image/jpeg;base64,${result.assets[0].base64}`;
+  }
   return result.assets[0].uri;
 }
 
@@ -102,23 +106,31 @@ export async function takePhoto(): Promise<string | null> {
     allowsEditing: true,
     aspect: [4, 3],
     quality: 0.8,
-    base64: false,
+    base64: true, // Enable base64 to avoid file system issues
   });
 
   if (result.canceled || !result.assets[0]) {
     return null;
   }
 
+  // Return base64 directly if available, otherwise URI
+  if (result.assets[0].base64) {
+    return `data:image/jpeg;base64,${result.assets[0].base64}`;
+  }
   return result.assets[0].uri;
 }
 
 /**
- * Convert image URI to base64
+ * Convert image URI to base64 (or pass through if already base64)
  */
 async function uriToBase64(uri: string): Promise<string> {
-  // FileSystem is only available in native environment
+  // If already a base64 data URI, return as-is
+  if (uri.startsWith('data:')) {
+    return uri;
+  }
+
+  // For web platform
   if (Platform.OS === 'web') {
-    // For web, fetch the blob and convert to base64
     const response = await fetch(uri);
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
@@ -129,7 +141,7 @@ async function uriToBase64(uri: string): Promise<string> {
     });
   }
 
-  // Check if expo-file-system is available
+  // For native platforms - use expo-file-system
   try {
     const FileSystem = require('expo-file-system');
     const base64 = await FileSystem.readAsStringAsync(uri, {
@@ -138,7 +150,8 @@ async function uriToBase64(uri: string): Promise<string> {
     return `data:image/jpeg;base64,${base64}`;
   } catch (error) {
     console.error('Failed to convert image to base64:', error);
-    throw new Error('Failed to process image');
+    // Fallback: return with placeholder if conversion fails
+    throw new Error('Failed to process image. Please try again.');
   }
 }
 

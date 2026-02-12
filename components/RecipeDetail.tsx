@@ -47,16 +47,28 @@ export function RecipeDetail({
   useEffect(() => {
     setRecipe(initialRecipe);
     setCookingMode(false);
-    setCookingProgress({
-      currentStep: -1,
-      completedSteps: [],
-      startedAt: null,
-      completedAt: null,
-    });
     setShowRatingModal(false);
     setSelectedRating(0);
-    loadSavedProgress();
-  }, [initialRecipe.id]);
+    
+    // If recipe is already Done, show completed state with all steps marked
+    if (initialRecipe.status === 'Done') {
+      setCookingProgress({
+        currentStep: initialRecipe.instructions.length - 1,
+        completedSteps: initialRecipe.instructions.map((_, i) => i),
+        startedAt: null,
+        completedAt: initialRecipe.cookingProgress?.completedAt || new Date(),
+      });
+    } else {
+      // Reset progress and try to load any saved progress
+      setCookingProgress({
+        currentStep: -1,
+        completedSteps: [],
+        startedAt: null,
+        completedAt: null,
+      });
+      loadSavedProgress();
+    }
+  }, [initialRecipe.id, initialRecipe.status]);
 
   const loadSavedProgress = async () => {
     const savedProgress = await recipeService.getCookingProgress(userId, recipe.id);
@@ -240,9 +252,15 @@ export function RecipeDetail({
 
         {/* Quick Info */}
         <View style={styles.metaRow}>
-          <MetaItem icon="clockcircleo" label="Cook Time" value={`${recipe.cookTime} mins`} />
+          {recipe.prepTime ? (
+            <MetaItem icon="clock-circle" label="Prep" value={`${recipe.prepTime} mins`} />
+          ) : null}
+          <MetaItem icon="clock-circle" label="Cook" value={`${recipe.cookTime} mins`} />
+          {recipe.totalTime ? (
+            <MetaItem icon="clock-circle" label="Total" value={`${recipe.totalTime} mins`} />
+          ) : null}
           <MetaItem icon="team" label="Servings" value={`${recipe.servings}`} />
-          <MetaItem icon="Trophy" label="Difficulty" value={recipe.difficulty} />
+          <MetaItem icon="trophy" label="Difficulty" value={recipe.difficulty} />
           <MetaItem icon="fire" label="Calories" value={`${recipe.calories}`} />
         </View>
 

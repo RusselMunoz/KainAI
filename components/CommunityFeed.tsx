@@ -358,10 +358,12 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe 
           )}
           <TouchableOpacity style={styles.engagementBtn} onPress={onSave}>
             <Feather 
-              name="bookmark" 
+              name={isSaved ? "bookmark" : "bookmark"} 
               size={18} 
               color={isSaved ? '#2bb673' : '#666'} 
+              style={isSaved ? { transform: [{ scale: 1.1 }] } : undefined}
             />
+            {isSaved && <View style={styles.savedIndicator} />}
           </TouchableOpacity>
           <TouchableOpacity style={styles.engagementBtn}>
             <Feather name="share-2" size={18} color="#666" />
@@ -520,7 +522,7 @@ export function ShareSuccessModal({
                   style={styles.removeImageBtn} 
                   onPress={() => removeImage(index)}
                 >
-                  <AntDesign name="closecircle" size={20} color="#ff4444" />
+                  <AntDesign name="close-circle" size={20} color="#ff4444" />
                 </TouchableOpacity>
               </View>
             ))}
@@ -883,6 +885,16 @@ const styles = StyleSheet.create({
   },
   engagementTextActive: {
     color: '#ef4444',
+  },
+  savedIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    left: '50%',
+    marginLeft: -3,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#2bb673',
   },
   saveArchiveBtn: {
     backgroundColor: '#f0fdf4',

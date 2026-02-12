@@ -15,12 +15,13 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
 import { ChatScreen } from '../chat';
 import RecipeDetail from '../../components/RecipeDetail';
 import { CommunityFeed, ShareSuccessModal } from '../../components/CommunityFeed';
 import recipeService from '../../services/recipe.service';
 import authService from '../../services/auth.service';
+import userStatsService, { UserStats } from '../../services/user-stats.service';
 import type { Recipe, TabName } from '../../types';
 
 const TABS = ['Chat', 'Recipes', 'Community', 'Awards'];
@@ -49,13 +50,22 @@ export default function Dashboard() {
   
   // User state
   const [userLevel, setUserLevel] = useState('Beginner');
-  const [userXP, setUserXP] = useState(150);
+  const [userXP, setUserXP] = useState(0);
   const [userName, setUserName] = useState('User');
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
 
   // Load user data on mount
   useEffect(() => {
     loadUserData();
+    loadUserStats();
   }, []);
+
+  const loadUserStats = async () => {
+    const stats = await userStatsService.loadStats();
+    setUserStats(stats);
+    setUserXP(stats.xp);
+    setUserLevel(stats.level);
+  };
 
   const loadUserData = async () => {
     try {
@@ -92,23 +102,69 @@ export default function Dashboard() {
     loadRecipes();
   }, []);
 
-  // Handle recipe completion - show share modal
-  const handleRecipeComplete = useCallback((recipe: Recipe, rating: number) => {
+  // Handle recipe completion - show share modal and award XP
+  const handleRecipeComplete = useCallback(async (recipe: Recipe, rating: number) => {
     setCompletedRecipe(recipe);
     setCompletedRating(rating);
     setShowRecipeDetail(false);
     
+    // Award XP for completing recipe
+    try {
+      const ingredients = recipe.ingredients?.map(ing => ing.name) || [];
+      const result = await userStatsService.onRecipeComplete(ingredients);
+      
+      // Update local state
+      setUserXP(result.newXP);
+      
+      // Show level up notification only if leveled up
+      if (result.leveledUp && result.newLevel) {
+        setUserLevel(result.newLevel);
+        setTimeout(() => {
+          Alert.alert(
+            '🎉 Level Up!',
+            `Congratulations! You're now a ${result.newLevel}!\n\n+${result.xpAwarded} XP earned`,
+            [{ text: 'Awesome!' }]
+          );
+        }, 500);
+      } else if (result.newAchievements && result.newAchievements.length > 0) {
+        // Show achievement unlocked
+        const achievementList = result.newAchievements.join('\n');
+        Alert.alert(
+          '🏆 Achievement Unlocked!',
+          `${achievementList}\n\n+${result.xpAwarded} XP earned`,
+          [{ text: 'Awesome!' }]
+        );
+      } else {
+        // Just show XP earned
+        Alert.alert(
+          '✨ Recipe Complete!',
+          `You earned +${result.xpAwarded} XP`,
+          [{ text: 'Nice!' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error awarding XP:', error);
+    }
+    
     // Brief delay before showing share prompt
     setTimeout(() => {
       setShowShareModal(true);
-    }, 300);
+    }, 800);
   }, []);
 
-  // Handle share completion
-  const handleShareComplete = useCallback(() => {
+  // Handle share completion - award bonus XP
+  const handleShareComplete = useCallback(async () => {
     setShowShareModal(false);
     setCompletedRecipe(null);
     setTab('Community');
+    
+    // Award XP for sharing
+    try {
+      const result = await userStatsService.onShareCreation();
+      setUserXP(result.newXP);
+    } catch (error) {
+      console.error('Error awarding share XP:', error);
+    }
   }, []);
 
   // Open recipe detail
@@ -129,15 +185,19 @@ export default function Dashboard() {
           <View style={styles.avatar} />
           <View style={{ marginLeft: 12 }}>
             <Text style={styles.hello}>Hello, {userName}!</Text>
-            <Text style={styles.xpSmall}>{userLevel} • {userXP} XP</Text>
+            <Text style={styles.xpSmall}>{userLevel}</Text>
           </View>
         </View>
 
         <View style={styles.headerRight}>
-          <View style={styles.levelBadge}>
-            <Text style={styles.levelText}>Level</Text>
-            <Text style={styles.levelValue}>{userLevel}</Text>
-          </View>
+          {/* XP Badge - Prominent display - tap to see rewards */}
+          <TouchableOpacity 
+            style={styles.xpBadge}
+            onPress={() => router.push('/rewards')}
+          >
+            <Ionicons name="star" size={16} color="#f59e0b" />
+            <Text style={styles.xpBadgeText}>{userXP} XP</Text>
+          </TouchableOpacity>
           {/* Debug button - remove in production */}
           <Pressable
             style={[styles.settings, { marginRight: 8, backgroundColor: '#e74c3c' }]}
@@ -163,7 +223,7 @@ export default function Dashboard() {
             onPress={() => setTab(t as TabName)}
             style={[styles.tabItem, tab === t && styles.tabItemActive]}>
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text>
-            {t === 'Community' && <View style={styles.badgeDot} />}
+            {t === 'Community' && <View/>}
           </Pressable>
         ))}
       </View>
@@ -276,7 +336,7 @@ function RecipesView({ recipes, onRecipePress, onRefresh }: RecipesViewProps) {
               <Text style={styles.recipeRating}>★ {recipe.userRating || '4.8'}</Text>
               {recipe.status === 'Done' && (
                 <View style={styles.doneIndicator}>
-                  <AntDesign name="checkcircle" size={14} color="#22c55e" />
+                  <AntDesign name="check-circle" size={14} color="#22c55e" />
                 </View>
               )}
             </View>
@@ -403,15 +463,26 @@ const styles = StyleSheet.create({
   hello: { color: '#fff', fontWeight: '700', fontSize: 16 },
   xpSmall: { color: '#e6ffe9', fontSize: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
-  levelBadge: {
-    backgroundColor: '#ff8a3d',
-    borderRadius: 10,
-    paddingHorizontal: 10,
+  xpBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    marginRight: 8,
+    marginRight: 10,
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  levelText: { color: '#fff', fontSize: 10 },
-  levelValue: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  xpBadgeText: {
+    color: '#f59e0b',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   settings: {
     backgroundColor: '#ff9a5b',
     padding: 8,

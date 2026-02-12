@@ -3,6 +3,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Platform, View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, Keyboard, ActivityIndicator } from 'react-native';
 import { GiftedChat, IMessage, Send, Bubble, InputToolbar } from 'react-native-gifted-chat';
 import axios from 'axios';
+import { validateIngredient } from '../services/profanity-filter.service';
 
 // DEBUG MODE - set to true for extra logging and test controls
 const DEBUG_MODE = true;
@@ -222,8 +223,33 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
 
   // Example: parse ingredient list from user message (replace with your own logic)
   function extractIngredients(text: string): string[] {
-    // Simple comma split, improve as needed
-    return text.split(',').map(s => s.trim()).filter(Boolean);
+    // Split by comma and filter out empty/invalid entries
+    const ingredients = text.split(',').map(s => s.trim()).filter(Boolean);
+    
+    // Validate each ingredient (includes profanity filter)
+    const validIngredients: string[] = [];
+    const invalidIngredients: string[] = [];
+    
+    for (const ingredient of ingredients) {
+      const validation = validateIngredient(ingredient);
+      if (validation.isValid) {
+        validIngredients.push(ingredient);
+      } else {
+        invalidIngredients.push(ingredient);
+        console.log(`⚠️ Invalid ingredient rejected: "${ingredient}" - ${validation.error}`);
+      }
+    }
+    
+    // Alert user if any ingredients were rejected
+    if (invalidIngredients.length > 0) {
+      Alert.alert(
+        'Invalid Ingredients',
+        `Some ingredients were not accepted. Please enter valid food items.`,
+        [{ text: 'OK' }]
+      );
+    }
+    
+    return validIngredients;
   }
 
   const onSend = useCallback((newMessages: ExtendedMessage[] = []) => {
@@ -304,34 +330,67 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   }, [onSend]);
 
   // Handle Yes/No button press from confirmation bubble
-  const handleConfirm = useCallback((messageId: string, confirmationData: { prompt: string; ingredientList: string[] }, userConfirmed: boolean) => {
+  const handleConfirm = useCallback((messageId: string, confirmationData: { prompt: string; ingredientList: string[] }, choice: 'yes' | 'no' | 'recommend') => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('✅ CONFIRM button pressed');
-    console.log('   userConfirmed:', userConfirmed);
+    console.log('   choice:', choice);
     console.log('   confirmationData:', confirmationData);
     
     // Remove the confirmation message (replace with user's choice)
     setMessages((prev) => prev.filter(m => m._id !== messageId));
     
-    // Add user's response message
-    const userResponseMsg: ExtendedMessage = {
-      _id: Math.random().toString(36).substring(2),
-      text: userConfirmed ? '✅ Yes, generate the recipe!' : '❌ No, let me try different ingredients.',
-      createdAt: new Date(),
-      user: { _id: 1, name: 'User' },
-    };
-    setMessages((prev) => GiftedChat.append(prev, [userResponseMsg]));
-    
-    if (userConfirmed) {
+    if (choice === 'yes') {
+      // Add user's response message
+      const userResponseMsg: ExtendedMessage = {
+        _id: Math.random().toString(36).substring(2),
+        text: '✅ Yes, these ingredients are final!',
+        createdAt: new Date(),
+        user: { _id: 1, name: 'User' },
+      };
+      setMessages((prev) => GiftedChat.append(prev, [userResponseMsg]));
+      
       // User confirmed - proceed with recipe generation
-      // IMPORTANT: Pass confirmed=true to trigger recipe generation on server
       getBotResponse(
         confirmationData.prompt,
         confirmationData.ingredientList,
         true // confirmed = true means "proceed with generation"
       );
+    } else if (choice === 'recommend') {
+      // User wants AI recommendations
+      const userResponseMsg: ExtendedMessage = {
+        _id: Math.random().toString(36).substring(2),
+        text: '🤖 Recommend additional ingredients',
+        createdAt: new Date(),
+        user: { _id: 1, name: 'User' },
+      };
+      setMessages((prev) => GiftedChat.append(prev, [userResponseMsg]));
+      
+      // Ask AI for complementary ingredient suggestions
+      const thinkingMsg: ExtendedMessage = {
+        _id: 'thinking-' + Date.now(),
+        text: '🤔 Thinking of ingredients that would complement yours...',
+        createdAt: new Date(),
+        user: { _id: 2, name: 'Cheffy' },
+        messageType: MESSAGE_TYPE_THINKING,
+      };
+      setMessages((prev) => GiftedChat.append(prev, [thinkingMsg]));
+      
+      // Call server with special recommend mode
+      getBotResponse(
+        `Based on these ingredients: ${confirmationData.ingredientList.join(', ')}. What 3-5 additional ingredients would complement them well for a delicious recipe? List each suggestion on a new line.`,
+        confirmationData.ingredientList,
+        false // Not confirmed yet - will get recommendations
+      );
     } else {
       // User said no - offer to add more ingredients or start fresh (better UX)
+      const userResponseMsg: ExtendedMessage = {
+        _id: Math.random().toString(36).substring(2),
+        text: '❌ No, let me modify.',
+        createdAt: new Date(),
+        user: { _id: 1, name: 'User' },
+      };
+      setMessages((prev) => GiftedChat.append(prev, [userResponseMsg]));
+      
       const addMoreMsg: ExtendedMessage = {
         _id: Math.random().toString(36).substring(2),
         text: `Your current ingredients: ${confirmationData.ingredientList.join(', ')}\n\nWould you like to add more ingredients to this list, or start fresh with different ones?`,
@@ -400,7 +459,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   const renderBubble = useCallback((props: any) => {
     const { currentMessage } = props;
     
-    // Check if this is a confirmation message
+    // Check if this is a confirmation message with 3 options
     if (currentMessage?.messageType === MESSAGE_TYPE_CONFIRMATION && currentMessage?.confirmationData) {
       return (
         <View style={styles.confirmationBubble}>
@@ -413,18 +472,24 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
               left: styles.botBubbleText,
             }}
           />
-          <View style={styles.confirmButtonsInBubble}>
+          <View style={styles.confirmButtonsColumn}>
             <TouchableOpacity
-              style={[styles.inBubbleBtn, styles.yesBtn]}
-              onPress={() => handleConfirm(currentMessage._id, currentMessage.confirmationData, true)}
+              style={[styles.fullWidthBtn, styles.yesBtn]}
+              onPress={() => handleConfirm(currentMessage._id, currentMessage.confirmationData, 'yes')}
             >
-              <Text style={styles.inBubbleBtnText}>✅ Yes</Text>
+              <Text style={styles.fullWidthBtnText}>✅ Yes, finalize ingredients</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.inBubbleBtn, styles.noBtn]}
-              onPress={() => handleConfirm(currentMessage._id, currentMessage.confirmationData, false)}
+              style={[styles.fullWidthBtn, styles.addMoreBtn]}
+              onPress={() => handleConfirm(currentMessage._id, currentMessage.confirmationData, 'no')}
             >
-              <Text style={styles.inBubbleBtnText}>❌ No</Text>
+              <Text style={styles.fullWidthBtnText}>➕ Add more ingredients</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.fullWidthBtn, styles.recommendBtn]}
+              onPress={() => handleConfirm(currentMessage._id, currentMessage.confirmationData, 'recommend')}
+            >
+              <Text style={styles.fullWidthBtnText}>🤖 Suggest complementary ingredients</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -523,13 +588,34 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         text={inputText}
         onInputTextChanged={setInputText}
         renderBubble={renderBubble}
-        renderSend={(props) => (
-          <Send {...props} containerStyle={styles.sendContainer}>
-            <View style={styles.sendButton}>
-              <Text style={styles.sendButtonText}>Send</Text>
-            </View>
-          </Send>
-        )}
+        renderSend={(props) => {
+          // Don't show send button if no text
+          if (!inputText.trim()) {
+            return null;
+          }
+          return (
+            <TouchableOpacity 
+              style={styles.sendContainer}
+              onPress={() => {
+                console.log('🟢 Custom Send button pressed');
+                if (inputText.trim()) {
+                  const message: ExtendedMessage = {
+                    _id: Math.random().toString(36).substring(2),
+                    text: inputText.trim(),
+                    createdAt: new Date(),
+                    user: { _id: 1 },
+                  };
+                  onSend([message]);
+                  Keyboard.dismiss();
+                }
+              }}
+            >
+              <View style={styles.sendButton}>
+                <Text style={styles.sendButtonText}>Send</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
     </View>
   );
@@ -609,6 +695,23 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     gap: 10,
   },
+  confirmButtonsColumn: {
+    marginTop: 8,
+    marginLeft: 10,
+    gap: 8,
+  },
+  fullWidthBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    minWidth: 200,
+    alignItems: 'center',
+  },
+  fullWidthBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
   inBubbleBtn: {
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -627,6 +730,9 @@ const styles = StyleSheet.create({
   },
   startFreshBtn: {
     backgroundColor: '#8b5cf6',
+  },
+  recommendBtn: {
+    backgroundColor: '#f59e0b',
   },
   inBubbleBtnText: {
     color: '#fff',

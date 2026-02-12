@@ -68,7 +68,9 @@ export interface Recipe {
   description: string;
   ingredients: Ingredient[];
   instructions: Instruction[];
+  prepTime?: number;
   cookTime: number;
+  totalTime?: number;
   servings: number;
   difficulty: Difficulty;
   calories: number;
