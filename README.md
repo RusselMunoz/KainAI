@@ -1,50 +1,43 @@
-# Welcome to your Expo app 👋
+# Cheffy: Your AI Culinary Assistant 🍳
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Cheffy is a cross-platform mobile application built with **React Native (Expo)** and **Firebase**. It bridges the gap between AI-driven recipe generation and social cooking experiences.
 
-## Get started
+## ✨ Features
 
-1. Install dependencies
+### 🤖 AI Chatbot & Recipe Generation
+* **Leftover Logic:** Input available ingredients and receive custom-tailored recipes.
+* **Instant Archiving:** Generated recipes are automatically saved to your personal log.
 
-   ```bash
-   npm install
-   ```
+### 🎮 Gamified Experience (XP & Rewards)
+* **Chef Levels:** Progress from "Beginner" to "Master" by completing recipes.
+* **Achievement System:** Unlock badges like "Ingredient Master" and "Streak Master."
+* **Rewards Tier:** Interactive 3-tier tracking for weekly goals and instant XP boosts.
 
-2. Start the app
+### 👨‍🍳 Interactive Cooking Mode
+* **Step-by-Step Tracking:** Persistent checklists that save your progress.
+* **Nutritional Insights:** Real-time estimates for calories, protein, carbs, and fats.
+* **Completion Flow:** Mark recipes as "Done" and share them directly to the community.
 
-   ```bash
-   npx expo start
-   ```
+### 🤝 Community & Social
+* **Shared Creations:** Post your successful meals to the public feed.
+* **Social Indicators:** Bookmark recipes and see what others are cooking.
 
-In the output, you'll find options to open the app in a
+## 🛠️ Technical Stack
+- **Frontend:** React Native (Expo Router)
+- **Backend:** Firebase (Auth, Firestore, Storage)
+- **State Management:** React Hooks & Services
+- **Safety:** Custom client/server-side profanity filtering.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 📂 Project Structure (Recent Overhaul)
+The project recently underwent a major directory reorganization to improve scalability:
+- `/app/(tabs)/legal_and_info_section`: Houses Privacy, Terms, and Licenses.
+- `/app/(tabs)/privacy_and_data_section`: New home for Health Data and Data Sharing disclosures.
+- `/services`: Centralized logic for XP tracking and content filtering.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 📝 Privacy & Compliance
+We prioritize user data safety. Our **Health & Nutrition** and **Data Sharing** disclosures are explicitly integrated into the app with bolded legal constraints to ensure transparency regarding AI estimates and public posting.
 
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## 🚧 Known Issues (In Progress)
+- **Firebase Sync:** Integrating Firestore as the primary source of truth over AsyncStorage.
+- **Auth:** Resolving Google Sign-In initialization bugs.
+- **Dynamic Avatars:** Implementing letter-based placeholders for new
