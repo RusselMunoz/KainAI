@@ -12,7 +12,8 @@ import {
   ActivityIndicator,
   Animated,
 } from 'react-native';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import Feather from '@expo/vector-icons/Feather';
 import userStatsService, { UserStats, XP_REWARDS } from '../../services/user-stats.service';
 
 // Weekly Goals for Tier 2

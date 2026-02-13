@@ -14,7 +14,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, AntDesign } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
+import AntDesign from '@expo/vector-icons/AntDesign';
 import uploadService from '../services/upload.service';
 import Avatar from '../components/Avatar';
 import { useUser, UserProfile } from '../contexts/UserContext';

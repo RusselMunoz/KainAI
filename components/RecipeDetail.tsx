@@ -11,7 +11,9 @@ import {
   Alert,
   Dimensions,
 } from 'react-native';
-import { AntDesign, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import AntDesign from '@expo/vector-icons/AntDesign';
+import Feather from '@expo/vector-icons/Feather';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { Recipe, Ingredient, Instruction, CookingProgress } from '../types';
 import recipeService from '../services/recipe.service';
 

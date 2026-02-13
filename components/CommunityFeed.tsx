@@ -14,7 +14,9 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { AntDesign, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import AntDesign from '@expo/vector-icons/AntDesign';
+import Feather from '@expo/vector-icons/Feather';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { CommunityPost, PostType, CommunityStats, Recipe } from '../types';
 import communityService from '../services/community.service';
 import recipeService from '../services/recipe.service';

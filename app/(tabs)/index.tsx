@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { useRouter } from 'expo-router';
 import {
   View,
@@ -13,17 +13,33 @@ import {
   StatusBar as RNStatusBar,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
-import { ChatScreen } from '../chat';
-import RecipeDetail from '../../components/RecipeDetail';
-import { CommunityFeed, ShareSuccessModal } from '../../components/CommunityFeed';
+import AntDesign from '@expo/vector-icons/AntDesign';
+import Feather from '@expo/vector-icons/Feather';
+import Ionicons from '@expo/vector-icons/Ionicons';
+
+// Lazy load heavy components - only imported when needed
+// This significantly reduces initial bundle parsing time
+const ChatScreen = lazy(() => import('../chat').then(m => ({ default: m.ChatScreen })));
+const RecipeDetail = lazy(() => import('../../components/RecipeDetail'));
+const CommunityFeed = lazy(() => import('../../components/CommunityFeed').then(m => ({ default: m.CommunityFeed })));
+const ShareSuccessModal = lazy(() => import('../../components/CommunityFeed').then(m => ({ default: m.ShareSuccessModal })));
+
+// Lightweight components loaded immediately
 import Avatar from '../../components/Avatar';
 import recipeService from '../../services/recipe.service';
 import userStatsService, { UserStats } from '../../services/user-stats.service';
 import { useUser } from '../../contexts/UserContext';
 import type { Recipe, TabName } from '../../types';
+
+// Loading fallback for lazy components
+const LoadingFallback = () => (
+  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <ActivityIndicator size="large" color="#f59e0b" />
+  </View>
+);
 
 const TABS = ['Chat', 'Recipes', 'Community', 'Awards'];
 const screenW = Dimensions.get('window').width;
@@ -225,7 +241,11 @@ export default function Dashboard() {
       </View>
 
       <View style={{ flex: 1 }}>
-        {tab === 'Chat' && <ChatScreen onRecipeGenerated={handleRecipeGenerated} />}
+        {tab === 'Chat' && (
+          <Suspense fallback={<LoadingFallback />}>
+            <ChatScreen onRecipeGenerated={handleRecipeGenerated} />
+          </Suspense>
+        )}
         {tab === 'Recipes' && (
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: composerHeight + 120 }]}> 
             <RecipesView 
@@ -236,20 +256,22 @@ export default function Dashboard() {
           </ScrollView>
         )}
         {tab === 'Community' && (
-          <CommunityFeed
-            userId={DEMO_USER_ID}
-            onSharePress={() => {
-              if (completedRecipe) {
-                setShowShareModal(true);
-              } else {
-                Alert.alert(
-                  'No Recipe to Share',
-                  'Complete a recipe first, then you can share your creation!',
-                  [{ text: 'OK' }]
-                );
-              }
-            }}
-          />
+          <Suspense fallback={<LoadingFallback />}>
+            <CommunityFeed
+              userId={DEMO_USER_ID}
+              onSharePress={() => {
+                if (completedRecipe) {
+                  setShowShareModal(true);
+                } else {
+                  Alert.alert(
+                    'No Recipe to Share',
+                    'Complete a recipe first, then you can share your creation!',
+                    [{ text: 'OK' }]
+                  );
+                }
+              }}
+            />
+          </Suspense>
         )}
         {tab === 'Awards' && (
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: composerHeight + 120 }]}>
@@ -271,28 +293,32 @@ export default function Dashboard() {
         animationType="slide"
         onRequestClose={() => setShowRecipeDetail(false)}
       >
-        {selectedRecipe && (
-          <RecipeDetail
-            recipe={selectedRecipe}
-            userId={DEMO_USER_ID}
-            onClose={() => {
-              setShowRecipeDetail(false);
-              loadRecipes(); // Refresh in case status changed
-            }}
-            onRecipeComplete={handleRecipeComplete}
-          />
-        )}
+        <Suspense fallback={<LoadingFallback />}>
+          {selectedRecipe && (
+            <RecipeDetail
+              recipe={selectedRecipe}
+              userId={DEMO_USER_ID}
+              onClose={() => {
+                setShowRecipeDetail(false);
+                loadRecipes(); // Refresh in case status changed
+              }}
+              onRecipeComplete={handleRecipeComplete}
+            />
+          )}
+        </Suspense>
       </Modal>
 
       {/* Share Success Modal */}
-      <ShareSuccessModal
-        visible={showShareModal}
-        recipe={completedRecipe}
-        rating={completedRating}
-        userId={DEMO_USER_ID}
-        onClose={() => setShowShareModal(false)}
-        onShare={handleShareComplete}
-      />
+      <Suspense fallback={null}>
+        <ShareSuccessModal
+          visible={showShareModal}
+          recipe={completedRecipe}
+          rating={completedRating}
+          userId={DEMO_USER_ID}
+          onClose={() => setShowShareModal(false)}
+          onShare={handleShareComplete}
+        />
+      </Suspense>
     </View>
   );
 }
