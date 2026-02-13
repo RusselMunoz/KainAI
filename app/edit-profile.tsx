@@ -12,25 +12,14 @@ import {
   StatusBar as RNStatusBar,
   Alert,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, AntDesign } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import authService from '../services/auth.service';
 import uploadService from '../services/upload.service';
+import Avatar from '../components/Avatar';
+import { useUser, UserProfile } from '../contexts/UserContext';
 
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
-const PROFILE_KEY = '@cheffy_user_profile';
-
-interface UserProfile {
-  displayName: string;
-  bio: string;
-  photoURL: string | null;
-  dietaryPreferences: string[];
-  allergies: string[];
-  cookingLevel: string;
-}
 
 const COOKING_LEVELS = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
 const DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Halal', 'Kosher'];
@@ -38,42 +27,22 @@ const ALLERGY_OPTIONS = ['Nuts', 'Shellfish', 'Eggs', 'Soy', 'Wheat', 'Fish', 'S
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const { profile: globalProfile, setProfile: setGlobalProfile, loading: contextLoading } = useUser();
+  
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   
-  const [profile, setProfile] = useState<UserProfile>({
-    displayName: '',
-    bio: '',
-    photoURL: null,
-    dietaryPreferences: [],
-    allergies: [],
-    cookingLevel: 'Beginner',
-  });
+  // Local state for editing - initialized from global profile
+  const [profile, setProfile] = useState<UserProfile>(globalProfile);
 
+  // Sync local state when global profile loads
   useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    try {
-      // Load from AsyncStorage
-      const stored = await AsyncStorage.getItem(PROFILE_KEY);
-      if (stored) {
-        setProfile(JSON.parse(stored));
-      } else {
-        // Check auth service for display name
-        const user = await authService.getCurrentGoogleUser();
-        if (user?.displayName) {
-          setProfile(prev => ({ ...prev, displayName: user.displayName }));
-        }
-      }
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    } finally {
-      setLoading(false);
+    if (!contextLoading) {
+      setProfile(globalProfile);
     }
-  };
+  }, [globalProfile, contextLoading]);
+
+  const loading = contextLoading;
 
   const saveProfile = async () => {
     if (!profile.displayName.trim()) {
@@ -83,7 +52,8 @@ export default function EditProfileScreen() {
 
     setSaving(true);
     try {
-      await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+      // Update global profile - this propagates to ALL screens
+      await setGlobalProfile(profile);
       Alert.alert('Success', 'Profile updated successfully!', [
         { text: 'OK', onPress: () => router.back() }
       ]);
@@ -196,12 +166,12 @@ export default function EditProfileScreen() {
               <View style={styles.photoPlaceholder}>
                 <ActivityIndicator size="large" color="#ff8a3d" />
               </View>
-            ) : profile.photoURL ? (
-              <Image source={{ uri: profile.photoURL }} style={styles.photo} />
             ) : (
-              <View style={styles.photoPlaceholder}>
-                <Feather name="user" size={40} color="#ccc" />
-              </View>
+              <Avatar 
+                name={profile.displayName} 
+                photoURL={profile.photoURL} 
+                size={100} 
+              />
             )}
             <View style={styles.cameraIcon}>
               <Feather name="camera" size={16} color="#fff" />

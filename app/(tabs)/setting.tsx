@@ -72,15 +72,15 @@ export default function SettingsScreen() {
     }
     // Navigation for Legal & Info section
     if (key === 'privacy-policy') {
-      router.push('/legal_andinfo_section/privacy-policy');
+      router.push('/legal_and_info_section/privacy-policy');
       return;
     }
     if (key === 'terms') {
-      router.push('/legal_andinfo_section/terms');
+      router.push('/legal_and_info_section/terms');
       return;
     }
     if (key === 'licenses') {
-      router.push('/legal_andinfo_section/licenses');
+      router.push('/legal_and_info_section/licenses');
       return;
     }
     if (key === 'edit-profile') {

@@ -19,6 +19,7 @@ import type { CommunityPost, PostType, CommunityStats, Recipe } from '../types';
 import communityService from '../services/community.service';
 import recipeService from '../services/recipe.service';
 import uploadService from '../services/upload.service';
+import Avatar from './Avatar';
 
 const screenW = Dimensions.get('window').width;
 
@@ -269,15 +270,11 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe 
       {/* Post Header */}
       <View style={styles.postHeader}>
         <View style={styles.authorInfo}>
-          {post.authorPhotoURL ? (
-            <Image source={{ uri: post.authorPhotoURL }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>
-                {post.authorName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
+          <Avatar 
+            name={post.authorName} 
+            photoURL={post.authorPhotoURL} 
+            size={40} 
+          />
           <View style={styles.authorMeta}>
             <Text style={styles.authorName}>{post.authorName}</Text>
             <View style={styles.authorSubRow}>

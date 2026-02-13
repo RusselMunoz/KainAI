@@ -4,7 +4,7 @@
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",  // Changed from "node"
     "paths": {
       "@/*": [
         "./*"

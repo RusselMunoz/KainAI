@@ -19,9 +19,10 @@ import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
 import { ChatScreen } from '../chat';
 import RecipeDetail from '../../components/RecipeDetail';
 import { CommunityFeed, ShareSuccessModal } from '../../components/CommunityFeed';
+import Avatar from '../../components/Avatar';
 import recipeService from '../../services/recipe.service';
-import authService from '../../services/auth.service';
 import userStatsService, { UserStats } from '../../services/user-stats.service';
+import { useUser } from '../../contexts/UserContext';
 import type { Recipe, TabName } from '../../types';
 
 const TABS = ['Chat', 'Recipes', 'Community', 'Awards'];
@@ -48,15 +49,19 @@ export default function Dashboard() {
   const [completedRecipe, setCompletedRecipe] = useState<Recipe | null>(null);
   const [completedRating, setCompletedRating] = useState(0);
   
-  // User state
+  // User state - using global context
+  const { profile } = useUser();
   const [userLevel, setUserLevel] = useState('Beginner');
   const [userXP, setUserXP] = useState(0);
-  const [userName, setUserName] = useState('User');
   const [userStats, setUserStats] = useState<UserStats | null>(null);
 
-  // Load user data on mount
+  // Get first name from profile
+  const userName = profile.displayName 
+    ? profile.displayName.split(' ')[0] 
+    : 'User';
+
+  // Load user stats on mount
   useEffect(() => {
-    loadUserData();
     loadUserStats();
   }, []);
 
@@ -65,19 +70,6 @@ export default function Dashboard() {
     setUserStats(stats);
     setUserXP(stats.xp);
     setUserLevel(stats.level);
-  };
-
-  const loadUserData = async () => {
-    try {
-      const user = await authService.getCurrentGoogleUser();
-      if (user?.displayName) {
-        // Get first name only
-        const firstName = user.displayName.split(' ')[0];
-        setUserName(firstName);
-      }
-    } catch (error) {
-      console.error('Error loading user data:', error);
-    }
   };
 
   // Load recipes when switching to Recipes tab
@@ -182,7 +174,11 @@ export default function Dashboard() {
     <View style={styles.safe}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <View style={styles.avatar} />
+          <Avatar 
+            name={profile.displayName} 
+            photoURL={profile.photoURL} 
+            size={48} 
+          />
           <View style={{ marginLeft: 12 }}>
             <Text style={styles.hello}>Hello, {userName}!</Text>
             <Text style={styles.xpSmall}>{userLevel}</Text>
