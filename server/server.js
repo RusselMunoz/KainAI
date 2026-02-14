@@ -99,6 +99,85 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
+// ==================== FOOD VALIDATION ENDPOINT ====================
+// POST /api/validate-food - Validate custom dietary/allergy text using AI
+app.post('/api/validate-food', async (req, res) => {
+  try {
+    const { text, type } = req.body;
+    
+    if (!text || !text.trim()) {
+      return res.json({ isValid: true, message: 'Empty text is valid' });
+    }
+    
+    if (!API_KEY) {
+      // If no API key, accept all input (graceful degradation)
+      console.log('⚠️ No GROQ_API_KEY, skipping AI validation');
+      return res.json({ isValid: true, message: 'Validation skipped (no API key)' });
+    }
+    
+    const typeLabel = type === 'allergy' ? 'food allergy or intolerance' : 'dietary preference or food restriction';
+    const systemPrompt = `You are a food and nutrition expert. Your job is to validate if user input is a legitimate ${typeLabel}.
+
+Rules:
+1. Accept valid food allergies (e.g., "peanut allergy", "lactose intolerance", "mild shellfish sensitivity")
+2. Accept valid dietary preferences (e.g., "no red meat", "prefer organic", "low sodium", "pescatarian")
+3. Reject nonsense, gibberish, or inappropriate content
+4. Reject non-food related restrictions
+5. Be lenient with spelling mistakes if intent is clear
+
+Respond with ONLY a JSON object:
+{"isValid": true/false, "reason": "brief explanation"}`;
+
+    const response = await fetchFn(`${BASE}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Validate this ${type === 'allergy' ? 'allergy' : 'dietary preference'}: "${text}"` }
+        ],
+        temperature: 0.1,
+        max_tokens: 100,
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error('Groq API error:', response.status);
+      // Graceful fallback - accept input if AI fails
+      return res.json({ isValid: true, message: 'Validation skipped (API error)' });
+    }
+    
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    
+    try {
+      // Parse the JSON response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return res.json({
+          isValid: parsed.isValid !== false, // Default to valid if unclear
+          message: parsed.isValid ? 'Valid entry' : (parsed.reason || 'Please enter a valid food restriction'),
+        });
+      }
+    } catch (parseErr) {
+      console.log('Could not parse AI response:', content);
+    }
+    
+    // Default to accepting if we can't parse
+    return res.json({ isValid: true, message: 'Accepted' });
+    
+  } catch (err) {
+    console.error('Validation error:', err);
+    // Graceful fallback - accept input if anything fails
+    return res.json({ isValid: true, message: 'Validation skipped (server error)' });
+  }
+});
+
 // Endpoint to get user data (preferences, allergies, skill)
 app.get('/api/user/:userId', async (req, res) => {
   try {

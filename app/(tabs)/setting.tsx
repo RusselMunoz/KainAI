@@ -90,6 +90,19 @@ export default function SettingsScreen() {
       router.push('/edit-profile');
       return;
     }
+    // Navigate to edit-profile with scroll-to param for allergies/dietary
+    if (key === 'allergies') {
+      router.push({
+        pathname: '/edit-profile',
+        params: { scrollTo: 'allergies' }
+      });
+      return;
+    }
+    // Navigate to language settings placeholder
+    if (key === 'language') {
+      router.push('/Localization/language');
+      return;
+    }
     // Default: just log
     console.log('pressed', key);
   };

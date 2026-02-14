@@ -1,9 +1,35 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Platform, View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, Keyboard, ActivityIndicator } from 'react-native';
+import { Platform, View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, Keyboard, ActivityIndicator, Dimensions } from 'react-native';
 import { GiftedChat, IMessage, Send, Bubble, InputToolbar } from 'react-native-gifted-chat';
 import axios from 'axios';
 import { validateIngredient } from '../services/profanity-filter.service';
+import { useUser } from '../contexts/UserContext';
+
+// Get screen width for button sizing - match chat bubble width
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CHAT_BUBBLE_WIDTH = SCREEN_WIDTH * 0.75; // GiftedChat default bubble width is ~75%
+
+// Time formatting helper - converts to Philippine Time (PHT/GMT+8)
+const formatToPHT = (date: Date): string => {
+  try {
+    // Format in Philippine timezone
+    const options: Intl.DateTimeFormatOptions = {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Manila'
+    };
+    return new Intl.DateTimeFormat('en-US', options).format(date) + ' PHT';
+  } catch (e) {
+    // Fallback if timezone not supported
+    const hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes} ${ampm}`;
+  }
+};
 
 // DEBUG MODE - set to true for extra logging and test controls
 const DEBUG_MODE = true;
@@ -34,6 +60,12 @@ interface ExtendedMessage extends IMessage {
 }
 
 export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
+  // Get user profile from context for personalized greetings
+  const { profile } = useUser();
+  const userName = profile.displayName 
+    ? profile.displayName.split(' ')[0] 
+    : 'Chef';
+
   const [messages, setMessages] = useState<ExtendedMessage[]>([
     {
       _id: 'welcome',
@@ -60,7 +92,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
     }
   }, []);
 
-  // Test network on load using axios
+  // Test network on load using axios - depends on userName from profile
   useEffect(() => {
     const testNetwork = async () => {
       try {
@@ -73,7 +105,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         
         setMessages([{
           _id: 'welcome',
-          text: '✅ Connected! Hello, [User Name]! What ingredients are we working with today? Let\'s create something amazing together!',
+          text: `✅ Connected! Hello, ${userName}! What ingredients are we working with today? Let's create something amazing together!`,
           createdAt: new Date(),
           user: { _id: 2, name: 'Cheffy' },
         }]);
@@ -88,7 +120,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
       }
     };
     testNetwork();
-  }, []);
+  }, [userName]); // Re-run when username changes
 
   // Remove thinking message from chat
   const removeThinkingMessage = useCallback(() => {
@@ -593,6 +625,20 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         text={inputText}
         onInputTextChanged={setInputText}
         renderBubble={renderBubble}
+        renderTime={(props) => {
+          const { currentMessage } = props;
+          if (!currentMessage?.createdAt) return null;
+          const date = currentMessage.createdAt instanceof Date 
+            ? currentMessage.createdAt 
+            : new Date(currentMessage.createdAt);
+          return (
+            <View style={{ paddingHorizontal: 10, paddingBottom: 5 }}>
+              <Text style={{ fontSize: 10, color: '#8e8e8e' }}>
+                {formatToPHT(date)}
+              </Text>
+            </View>
+          );
+        }}
         textInputProps={{
           editable: !hasActiveConfirmation,
           placeholder: hasActiveConfirmation 
@@ -698,23 +744,24 @@ const styles = StyleSheet.create({
   confirmationBubble: {
     marginBottom: 10,
     marginLeft: 10,
-    width: '85%',  // Match bubble width
+    width: CHAT_BUBBLE_WIDTH, // Use exact screen-based width
   },
   confirmButtonsInBubble: {
     flexDirection: 'row',
     marginTop: 8,
     gap: 10,
+    width: CHAT_BUBBLE_WIDTH, // Match parent width
   },
   confirmButtonsColumn: {
     marginTop: 10,
     gap: 8,
-    width: '100%',  // Full width of bubble container
+    width: CHAT_BUBBLE_WIDTH, // Match exact bubble width
   },
   fullWidthBtn: {
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 12,
-    width: '100%',  // Match bubble width exactly
+    width: CHAT_BUBBLE_WIDTH, // Match exact bubble width
     alignItems: 'center',
   },
   fullWidthBtnText: {
@@ -726,7 +773,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
-    minWidth: 80,
+    flex: 1, // Each button takes equal width
+    minWidth: (CHAT_BUBBLE_WIDTH - 10) / 2, // Half bubble width minus gap
     alignItems: 'center',
   },
   yesBtn: {

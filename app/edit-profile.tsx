@@ -1,6 +1,6 @@
 // app/edit-profile.tsx - Edit Profile page
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'expo-router';
+import React, { useState, useEffect, useRef } from 'react';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   View,
   Text,
@@ -12,15 +12,20 @@ import {
   StatusBar as RNStatusBar,
   Alert,
   ActivityIndicator,
+  LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 import AntDesign from '@expo/vector-icons/AntDesign';
+import axios from 'axios';
 import uploadService from '../services/upload.service';
 import Avatar from '../components/Avatar';
 import { useUser, UserProfile } from '../contexts/UserContext';
 
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
+
+// Groq API for AI validation
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 const COOKING_LEVELS = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
 const DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Halal', 'Kosher'];
@@ -28,22 +33,91 @@ const ALLERGY_OPTIONS = ['Nuts', 'Shellfish', 'Eggs', 'Soy', 'Wheat', 'Fish', 'S
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ scrollTo?: string }>();
   const { profile: globalProfile, setProfile: setGlobalProfile, loading: contextLoading } = useUser();
   
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [validatingCustomText, setValidatingCustomText] = useState(false);
+  
+  // ScrollView ref for scrolling to sections
+  const scrollViewRef = useRef<ScrollView>(null);
+  
+  // Section Y positions for scroll-to functionality
+  const [sectionPositions, setSectionPositions] = useState<{ dietary: number; allergies: number }>({
+    dietary: 0,
+    allergies: 0,
+  });
   
   // Local state for editing - initialized from global profile
-  const [profile, setProfile] = useState<UserProfile>(globalProfile);
+  const [profile, setProfile] = useState<UserProfile>({
+    ...globalProfile,
+    customDietaryText: globalProfile.customDietaryText || '',
+    customAllergyText: globalProfile.customAllergyText || '',
+  });
 
   // Sync local state when global profile loads
   useEffect(() => {
     if (!contextLoading) {
-      setProfile(globalProfile);
+      setProfile({
+        ...globalProfile,
+        customDietaryText: globalProfile.customDietaryText || '',
+        customAllergyText: globalProfile.customAllergyText || '',
+      });
     }
   }, [globalProfile, contextLoading]);
+  
+  // Handle scroll-to when coming from Settings with a section param
+  useEffect(() => {
+    if (params.scrollTo && scrollViewRef.current) {
+      const targetY = params.scrollTo === 'allergies' 
+        ? sectionPositions.allergies 
+        : sectionPositions.dietary;
+      
+      // Small delay to ensure layout is calculated
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+      }, 300);
+    }
+  }, [params.scrollTo, sectionPositions]);
 
   const loading = contextLoading;
+  
+  // AI Validation for custom dietary/allergy text
+  const validateFoodRestriction = async (text: string, type: 'dietary' | 'allergy'): Promise<boolean> => {
+    if (!text.trim()) return true; // Empty is valid
+    
+    setValidatingCustomText(true);
+    try {
+      // Using local server proxy to avoid CORS issues
+      const API_BASE = Platform.select({
+        android: 'http://10.0.2.2:5173',
+        ios: 'http://localhost:5173',
+        default: 'http://localhost:5173',
+      });
+      
+      const response = await axios.post(`${API_BASE}/api/validate-food`, {
+        text,
+        type,
+      }, { timeout: 10000 });
+      
+      if (response.data?.isValid === false) {
+        Alert.alert(
+          'Invalid Entry',
+          response.data.message || `Please enter a valid ${type === 'dietary' ? 'dietary preference' : 'food allergy'}.`,
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.log('Validation API not available, accepting input:', error);
+      // If server unavailable, accept the input (better UX than blocking)
+      return true;
+    } finally {
+      setValidatingCustomText(false);
+    }
+  };
 
   const saveProfile = async () => {
     if (!profile.displayName.trim()) {
@@ -159,7 +233,11 @@ export default function EditProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+      >
         {/* Profile Photo */}
         <View style={styles.photoSection}>
           <TouchableOpacity onPress={handlePickPhoto} style={styles.photoWrapper}>
@@ -232,7 +310,12 @@ export default function EditProfileScreen() {
         </View>
 
         {/* Dietary Preferences */}
-        <View style={styles.inputSection}>
+        <View 
+          style={styles.inputSection}
+          onLayout={(e: LayoutChangeEvent) => {
+            setSectionPositions(prev => ({ ...prev, dietary: e.nativeEvent.layout.y }));
+          }}
+        >
           <Text style={styles.label}>Dietary Preferences</Text>
           <View style={styles.chipContainer}>
             {DIETARY_OPTIONS.map(pref => (
@@ -253,10 +336,36 @@ export default function EditProfileScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          
+          {/* Custom Dietary Text Input */}
+          <View style={styles.customInputContainer}>
+            <Text style={styles.customInputLabel}>📝 Specific dietary needs:</Text>
+            <TextInput
+              style={[styles.input, styles.customInput]}
+              value={profile.customDietaryText}
+              onChangeText={text => setProfile(prev => ({ ...prev, customDietaryText: text }))}
+              onBlur={() => validateFoodRestriction(profile.customDietaryText, 'dietary')}
+              placeholder="e.g., No red meat, prefer organic, pescatarian"
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={2}
+            />
+            {validatingCustomText && (
+              <View style={styles.validatingIndicator}>
+                <ActivityIndicator size="small" color="#ff8a3d" />
+                <Text style={styles.validatingText}>Validating...</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Allergies */}
-        <View style={styles.inputSection}>
+        <View 
+          style={styles.inputSection}
+          onLayout={(e: LayoutChangeEvent) => {
+            setSectionPositions(prev => ({ ...prev, allergies: e.nativeEvent.layout.y }));
+          }}
+        >
           <Text style={styles.label}>Allergies</Text>
           <View style={styles.chipContainer}>
             {ALLERGY_OPTIONS.map(allergy => (
@@ -277,6 +386,27 @@ export default function EditProfileScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+          
+          {/* Custom Allergy Text Input */}
+          <View style={styles.customInputContainer}>
+            <Text style={styles.customInputLabel}>📝 Specific allergies:</Text>
+            <TextInput
+              style={[styles.input, styles.customInput]}
+              value={profile.customAllergyText}
+              onChangeText={text => setProfile(prev => ({ ...prev, customAllergyText: text }))}
+              onBlur={() => validateFoodRestriction(profile.customAllergyText, 'allergy')}
+              placeholder="e.g., Mild lactose intolerance, can handle aged cheese"
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={2}
+            />
+            {validatingCustomText && (
+              <View style={styles.validatingIndicator}>
+                <ActivityIndicator size="small" color="#ff8a3d" />
+                <Text style={styles.validatingText}>Validating...</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -434,5 +564,34 @@ const styles = StyleSheet.create({
   allergyTextSelected: {
     color: '#fff',
     fontWeight: '500',
+  },
+  // Custom input styles for dietary/allergy text
+  customInputContainer: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  customInputLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+    marginBottom: 8,
+  },
+  customInput: {
+    height: 60,
+    textAlignVertical: 'top',
+    fontSize: 14,
+  },
+  validatingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 6,
+  },
+  validatingText: {
+    fontSize: 12,
+    color: '#ff8a3d',
+    fontStyle: 'italic',
   },
 });

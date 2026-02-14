@@ -2,6 +2,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth.service';
+import userService from '../services/userService';
+import statsService from '../services/statsService';
+import { isDemoMode, DEMO_USER_ID } from '../config/firebase';
 
 // Storage keys
 const PROFILE_KEY = '@cheffy_user_profile';
@@ -15,6 +18,9 @@ export interface UserProfile {
   dietaryPreferences: string[];
   allergies: string[];
   cookingLevel: string;
+  // Custom text fields for specific dietary needs and allergies
+  customDietaryText: string;
+  customAllergyText: string;
 }
 
 // User stats interface (XP, points, achievements)
@@ -49,6 +55,8 @@ const DEFAULT_PROFILE: UserProfile = {
   dietaryPreferences: [],
   allergies: [],
   cookingLevel: 'Beginner',
+  customDietaryText: '',
+  customAllergyText: '',
 };
 
 // Default stats values
@@ -225,13 +233,32 @@ export function UserProvider({ children }: UserProviderProps) {
       setProfileState(newProfile);
       await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(newProfile));
       
-      // TODO: Also update Firebase users collection when using real Firebase
-      // await firestore.collection('users').doc(uid).update(updates);
+      // Sync with Firebase if user is authenticated
+      if (uid) {
+        try {
+          // Map profile keys to Firebase user document fields
+          const firebaseUpdates: any = {};
+          if (updates.displayName !== undefined) firebaseUpdates.displayName = updates.displayName;
+          if (updates.bio !== undefined) firebaseUpdates.bio = updates.bio;
+          if (updates.photoURL !== undefined) firebaseUpdates.photoURL = updates.photoURL;
+          if (updates.dietaryPreferences !== undefined) firebaseUpdates.dietary_preferences = updates.dietaryPreferences;
+          if (updates.allergies !== undefined) firebaseUpdates.dietary_allergies = updates.allergies;
+          if (updates.customDietaryText !== undefined) firebaseUpdates.dietary_custom = updates.customDietaryText;
+          if (updates.customAllergyText !== undefined) firebaseUpdates.allergy_custom = updates.customAllergyText;
+          if (updates.cookingLevel !== undefined) firebaseUpdates.level = updates.cookingLevel;
+          
+          if (Object.keys(firebaseUpdates).length > 0) {
+            await userService.updateUser(uid, firebaseUpdates);
+          }
+        } catch (firebaseError) {
+          console.warn('Failed to sync profile to Firebase (non-blocking):', firebaseError);
+        }
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
       throw error;
     }
-  }, [profile]);
+  }, [profile, uid]);
 
   // Set complete profile (replaces existing)
   const setProfile = useCallback(async (newProfile: UserProfile) => {
@@ -239,13 +266,29 @@ export function UserProvider({ children }: UserProviderProps) {
       setProfileState(newProfile);
       await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(newProfile));
       
-      // TODO: Also update Firebase users collection when using real Firebase
-      // await firestore.collection('users').doc(uid).set(newProfile);
+      // Sync with Firebase if user is authenticated
+      if (uid) {
+        try {
+          const firebaseProfile = {
+            displayName: newProfile.displayName,
+            bio: newProfile.bio,
+            photoURL: newProfile.photoURL,
+            dietary_preferences: newProfile.dietaryPreferences,
+            dietary_allergies: newProfile.allergies,
+            dietary_custom: newProfile.customDietaryText,
+            allergy_custom: newProfile.customAllergyText,
+            level: newProfile.cookingLevel,
+          };
+          await userService.updateUser(uid, firebaseProfile);
+        } catch (firebaseError) {
+          console.warn('Failed to sync profile to Firebase (non-blocking):', firebaseError);
+        }
+      }
     } catch (error) {
       console.error('Error setting profile:', error);
       throw error;
     }
-  }, []);
+  }, [uid]);
 
   // Update stats (partial update) - This triggers re-renders in all subscribed components
   const updateStats = useCallback(async (updates: Partial<UserStats>) => {
