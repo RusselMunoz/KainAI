@@ -1,5 +1,6 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
 const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
@@ -33,6 +34,14 @@ config.resolver = {
   platforms: ['android', 'ios'],
   // Cache symlinks resolution
   unstable_enableSymlinks: true,
+  // Replace heavy optional dependencies with lightweight stubs
+  extraNodeModules: {
+    ...(config.resolver?.extraNodeModules || {}),
+    'react-native-zoom-reanimated': path.resolve(
+      __dirname,
+      'stubs/react-native-zoom-reanimated'
+    ),
+  },
 };
 
 // Enable caching for faster subsequent builds

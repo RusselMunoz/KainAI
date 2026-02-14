@@ -185,30 +185,119 @@ app.post('/api/chat', async (req, res) => {
     }
     console.log('👤 User data:', JSON.stringify(userData, null, 2));
 
-    // Step 2: If not confirmed, prompt for confirmation
-    if (!confirmed) {
+    // ==================== REQUEST ROUTING ====================
+    console.log('🔥 ROUTING REQUEST:', { confirmed, promptStart: prompt?.slice(0, 60) });
+    
+    // CASE 1: Initial ingredient submission (confirmed is undefined/null)
+    if (confirmed === undefined || confirmed === null) {
+      console.log('📋 CASE 1: Initial submission - asking for confirmation');
       return res.json({
         ok: true,
         needsConfirmation: true,
         message: `You provided these ingredients: ${ingredientList?.join(', ') || ''}.\nAre these final, or may I recommend and include additional ingredients? Please confirm before I generate your recipe.`
       });
     }
+    
+    // CASE 2: User wants AI recommendations (confirmed === false AND prompt asks for suggestions)
+    if (confirmed === false && prompt && (
+      prompt.includes('additional ingredients') || 
+      prompt.includes('complement') ||
+      prompt.includes('recommend') ||
+      prompt.includes('suggest')
+    )) {
+      console.log('🤖 CASE 2: User wants AI recommendations');
+      
+      const recommendationPrompt = `Based on these ingredients: ${ingredientList?.join(', ')}, suggest 3-5 complementary ingredients that would work well together.
 
-    // Step 3: Generate recipe prompt with all constraints
-    const systemPrompt = `You are Cheffy, a high-energy culinary expert and mentor. Your mission is to make professional-grade cooking accessible to everyone.
+User dietary constraints:
+- Preferences: ${userData.dietary_preferences?.join(', ') || 'None'}
+- Allergies to avoid: ${userData.dietary_allergies?.join(', ') || 'None'}
 
-User constraints:
-- Dietary preferences: ${userData.dietary_preferences?.join(', ') || 'None'}
-- Allergy restrictions: ${userData.dietary_allergies?.join(', ') || 'None'}
-- Cooking skill level: ${userData.cooking_skills?.join(', ') || 'Unknown'}
+FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+Here are 3-5 ingredients that would complement your selection:
 
-You must strictly adhere to all dietary and allergy restrictions.
+• [Ingredient 1] - [brief reason]
+• [Ingredient 2] - [brief reason]
+• [Ingredient 3] - [brief reason]
 
-IMPORTANT: Generate recipes in this EXACT format for parsing:
+Would you like to add any of these? Just type them out and I'll include them in your recipe!`;
 
-Recipe: [Title]
+      const url = `${BASE}/chat/completions`;
+      const body = {
+        model: MODEL,
+        messages: [
+          { role: 'system', content: 'You are Cheffy, a helpful cooking assistant. Suggest complementary ingredients that pair well with the user\'s ingredients.' },
+          { role: 'user', content: recommendationPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 512
+      };
 
-Description: [Brief description of the dish]
+      console.log('📤 Calling Groq for recommendations...');
+      const r = await fetchFn(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      const text = await r.text();
+      let json;
+      try { json = JSON.parse(text); } catch (e) { json = text; }
+
+      if (!r.ok) {
+        console.error('❌ Groq API error (recommendations):', r.status, text);
+        return res.status(502).json({ ok: false, error: json?.error?.message || 'Failed to get recommendations' });
+      }
+
+      const recommendationText = json?.choices?.[0]?.message?.content || 'I couldn\'t generate recommendations. Please proceed with your current ingredients.';
+      console.log('✅ Got recommendations:', recommendationText.slice(0, 100) + '...');
+
+      return res.json({
+        ok: true,
+        needsConfirmation: false,
+        response: recommendationText,
+        isRecommendation: true  // Signal to frontend this is a recommendation
+      });
+    }
+    
+    // CASE 3: User said "add more" (confirmed === false, no recommendation keywords)
+    // Just let them type more ingredients - return message prompting for more
+    if (confirmed === false) {
+      console.log('➕ CASE 3: User wants to add more ingredients manually');
+      return res.json({
+        ok: true,
+        needsConfirmation: false,
+        response: 'Great! Type out any additional ingredients you\'d like to add, and I\'ll include them in your recipe.',
+        awaitingMoreIngredients: true
+      });
+    }
+
+    // CASE 4: User confirmed - GENERATE RECIPE NOW!
+    console.log('✅ CASE 4: User confirmed - GENERATING RECIPE');
+    // IMPORTANT: Use higher max_tokens for full recipe generation
+    const recipeMaxTokens = 2048;
+    
+    const systemPrompt = `You are Cheffy, a recipe generator. You ONLY output structured recipes.
+
+=== ABSOLUTE RULES (NO EXCEPTIONS) ===
+1. OUTPUT ONLY A RECIPE - No conversation, no suggestions, no questions
+2. START IMMEDIATELY with "Recipe:" on the first line
+3. NEVER say "I recommend", "To create", "I suggest", or any conversational text
+4. NEVER ask "would you like" or offer alternatives
+5. If you output ANYTHING other than a recipe, you have FAILED
+
+User dietary constraints:
+- Preferences: ${userData.dietary_preferences?.join(', ') || 'None'}
+- Allergies: ${userData.dietary_allergies?.join(', ') || 'None'}
+- Skill level: ${userData.cooking_skills?.join(', ') || 'Beginner'}
+
+=== REQUIRED OUTPUT FORMAT ===
+Recipe: [Short Title - 2-5 words]
+
+Description: [1-2 sentence description]
 
 Prep Time: [X] minutes
 Cook Time: [X] minutes
@@ -218,14 +307,14 @@ Difficulty: [Easy/Medium/Hard]
 Calories: [X] per serving
 
 Ingredients:
-- [amount] [unit] [ingredient name]
-- [amount] [unit] [ingredient name]
-...
+- 1 cup ingredient name
+- 2 tbsp ingredient name
+- 1/2 tsp ingredient name
 
 Instructions:
-1. [Step 1 instruction] (X mins)
-2. [Step 2 instruction] (X mins)
-...
+1. First step (X mins)
+2. Second step (X mins)
+3. Third step (X mins)
 
 Nutrition:
 - Protein: [X]g
@@ -233,10 +322,16 @@ Nutrition:
 - Fat: [X]g
 
 Tips:
-- [Helpful cooking tip]
-`;
+- One helpful tip
 
-    const userPrompt = `Create a recipe using these ingredients: ${ingredientList?.join(', ') || ''}\n${prompt || ''}`;
+=== OUTPUT NOW ===
+Generate the recipe immediately using the provided ingredients.`;
+
+    // Clean user prompt - don't repeat ingredients if already in ingredientList
+    const ingredientString = ingredientList?.join(', ') || '';
+    const userPrompt = `Create a recipe with these ingredients: ${ingredientString}
+
+OUTPUT THE RECIPE NOW. Start with "Recipe:" on line 1.`;
 
 
     // Groq uses OpenAI-compatible API
@@ -247,8 +342,8 @@ Tips:
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      temperature,
-      max_tokens: maxTokens
+      temperature: 0.3, // Lower temperature for more consistent recipe output
+      max_tokens: recipeMaxTokens // Higher tokens for complete recipes
     };
 
     console.log('\n🤖 Calling Groq API...');
@@ -528,6 +623,20 @@ app.post('/api/community/posts/:postId/comments', async (req, res) => {
   }
 });
 
+// Delete a comment
+app.delete('/api/community/posts/:postId/comments/:commentId', async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { userId } = req.body;
+    
+    await communityService.deleteComment(postId, commentId, userId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error deleting comment:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
 // Delete a post
 app.delete('/api/community/posts/:postId', async (req, res) => {
   try {
@@ -538,6 +647,20 @@ app.delete('/api/community/posts/:postId', async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('Error deleting post:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+// Edit a post
+app.put('/api/community/posts/:postId', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId, title, content, tags } = req.body;
+    
+    const updatedPost = await communityService.updatePost(postId, userId, { title, content, tags });
+    return res.json({ ok: true, post: updatedPost });
+  } catch (err) {
+    console.error('Error updating post:', err);
     return res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });

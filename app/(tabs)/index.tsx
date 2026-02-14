@@ -30,7 +30,7 @@ const ShareSuccessModal = lazy(() => import('../../components/CommunityFeed').th
 // Lightweight components loaded immediately
 import Avatar from '../../components/Avatar';
 import recipeService from '../../services/recipe.service';
-import userStatsService, { UserStats } from '../../services/user-stats.service';
+import userStatsService from '../../services/user-stats.service';
 import { useUser } from '../../contexts/UserContext';
 import type { Recipe, TabName } from '../../types';
 
@@ -65,28 +65,18 @@ export default function Dashboard() {
   const [completedRecipe, setCompletedRecipe] = useState<Recipe | null>(null);
   const [completedRating, setCompletedRating] = useState(0);
   
-  // User state - using global context
-  const { profile } = useUser();
-  const [userLevel, setUserLevel] = useState('Beginner');
-  const [userXP, setUserXP] = useState(0);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  // User state - using global context for instant sync across screens
+  const { profile, stats, updateStats } = useUser();
+  
+  // Derived values from context - these update instantly when debug changes them
+  const userXP = stats.xp;
+  const userLevel = stats.level;
+  const rewardPoints = stats.rewardPoints;
 
   // Get first name from profile
   const userName = profile.displayName 
     ? profile.displayName.split(' ')[0] 
     : 'User';
-
-  // Load user stats on mount
-  useEffect(() => {
-    loadUserStats();
-  }, []);
-
-  const loadUserStats = async () => {
-    const stats = await userStatsService.loadStats();
-    setUserStats(stats);
-    setUserXP(stats.xp);
-    setUserLevel(stats.level);
-  };
 
   // Load recipes when switching to Recipes tab
   useEffect(() => {
@@ -121,12 +111,15 @@ export default function Dashboard() {
       const ingredients = recipe.ingredients?.map(ing => ing.name) || [];
       const result = await userStatsService.onRecipeComplete(ingredients);
       
-      // Update local state
-      setUserXP(result.newXP);
+      // Sync context with updated stats from service
+      await updateStats({ 
+        xp: result.newXP, 
+        level: result.newLevel || stats.level,
+        recipesCompleted: stats.recipesCompleted + 1,
+      });
       
       // Show level up notification only if leveled up
       if (result.leveledUp && result.newLevel) {
-        setUserLevel(result.newLevel);
         setTimeout(() => {
           Alert.alert(
             '🎉 Level Up!',
@@ -158,7 +151,7 @@ export default function Dashboard() {
     setTimeout(() => {
       setShowShareModal(true);
     }, 800);
-  }, []);
+  }, [stats, updateStats]);
 
   // Handle share completion - award bonus XP
   const handleShareComplete = useCallback(async () => {
@@ -169,11 +162,15 @@ export default function Dashboard() {
     // Award XP for sharing
     try {
       const result = await userStatsService.onShareCreation();
-      setUserXP(result.newXP);
+      // Sync context with updated stats
+      await updateStats({ 
+        xp: result.newXP,
+        recipesShared: stats.recipesShared + 1,
+      });
     } catch (error) {
       console.error('Error awarding share XP:', error);
     }
-  }, []);
+  }, [stats, updateStats]);
 
   // Open recipe detail
   const openRecipeDetail = (recipe: Recipe) => {
@@ -197,18 +194,27 @@ export default function Dashboard() {
           />
           <View style={{ marginLeft: 12 }}>
             <Text style={styles.hello}>Hello, {userName}!</Text>
+            {/* XP under name - clickable to go to Awards tab */}
+            <TouchableOpacity 
+              style={styles.xpUnderName}
+              onPress={() => setTab('Awards')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="star" size={12} color="#f59e0b" />
+              <Text style={styles.xpUnderNameText}>{userXP} XP</Text>
+            </TouchableOpacity>
             <Text style={styles.xpSmall}>{userLevel}</Text>
           </View>
         </View>
 
         <View style={styles.headerRight}>
-          {/* XP Badge - Prominent display - tap to see rewards */}
+          {/* Reward Points Badge - tap to see rewards store */}
           <TouchableOpacity 
-            style={styles.xpBadge}
+            style={styles.rewardPointsBadge}
             onPress={() => router.push('/rewards')}
           >
-            <Ionicons name="star" size={16} color="#f59e0b" />
-            <Text style={styles.xpBadgeText}>{userXP} XP</Text>
+            <Text style={styles.rewardPointsEmoji}>🎁</Text>
+            <Text style={styles.rewardPointsText}>{rewardPoints} pts</Text>
           </TouchableOpacity>
           {/* Debug button - remove in production */}
           <Pressable
@@ -275,7 +281,7 @@ export default function Dashboard() {
         )}
         {tab === 'Awards' && (
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: composerHeight + 120 }]}>
-            <AwardsView userXP={userXP} userLevel={userLevel} recipesCompleted={recipes.filter(r => r.status === 'Done').length} />
+            <AwardsView userXP={userXP} userLevel={userLevel} rewardPoints={rewardPoints} recipesCompleted={recipes.filter(r => r.status === 'Done').length} />
           </ScrollView>
         )}
       </View>
@@ -392,19 +398,78 @@ function RecipesView({ recipes, onRecipePress, onRefresh }: RecipesViewProps) {
 interface AwardsViewProps {
   userXP: number;
   userLevel: string;
+  rewardPoints: number;
   recipesCompleted: number;
 }
 
-function AwardsView({ userXP, userLevel, recipesCompleted }: AwardsViewProps) {
+function AwardsView({ userXP, userLevel, rewardPoints, recipesCompleted }: AwardsViewProps) {
+  const router = useRouter();
+  
+  // Calculate next level threshold
+  const levelThresholds = [
+    { level: 'Beginner', minXP: 0 },
+    { level: 'Novice Cook', minXP: 200 },
+    { level: 'Home Chef', minXP: 500 },
+    { level: 'Skilled Chef', minXP: 1000 },
+    { level: 'Expert Chef', minXP: 2000 },
+    { level: 'Master Chef', minXP: 5000 },
+    { level: 'Culinary Legend', minXP: 10000 },
+  ];
+  
+  const currentThresholdIndex = levelThresholds.findIndex(t => t.level === userLevel);
+  const currentThreshold = levelThresholds[currentThresholdIndex] || levelThresholds[0];
+  const nextThreshold = levelThresholds[currentThresholdIndex + 1] || levelThresholds[levelThresholds.length - 1];
+  
+  // Calculate progress percentage
+  const xpInCurrentLevel = userXP - currentThreshold.minXP;
+  const xpNeededForNext = nextThreshold.minXP - currentThreshold.minXP;
+  const progressPercent = xpNeededForNext > 0 ? Math.min((xpInCurrentLevel / xpNeededForNext) * 100, 100) : 100;
+  
   return (
     <View>
+      {/* XP Progress Section */}
       <View style={styles.awardsHeader}>
-        <Text style={styles.awardsTitle}>Your Cooking Journey</Text>
-        <Text style={styles.awardsXP}>{userXP} XP • {userLevel}</Text>
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${Math.min((userXP % 500) / 5, 100)}%` }]} />
+        <Text style={styles.awardsTitle}>🏆 Your Progress</Text>
+        
+        {/* Experience Points Card */}
+        <View style={styles.xpCard}>
+          <View style={styles.xpCardHeader}>
+            <Ionicons name="star" size={24} color="#f59e0b" />
+            <Text style={styles.xpCardTitle}>Experience Points</Text>
+          </View>
+
+          {/* Current Level */}
+          <View style={styles.levelRow}>
+            <Text style={styles.levelTitle}>{userLevel}</Text>
+            <Text style={styles.levelNext}>→ {nextThreshold.level}</Text>
+          </View>
+            
+          {/* Progress Bar */}
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+          </View>
+            
+          {/* XP Text */}
+          <Text style={styles.progressLabel}>
+            {userXP} / {nextThreshold.minXP} XP
+          </Text>
         </View>
-        <Text style={styles.progressLabel}>{500 - (userXP % 500)} XP to next level</Text>
+
+        {/* Reward Points Card */}
+        <View style={styles.rewardPointsCard}>
+          <View style={styles.xpCardHeader}>
+            <Text style={{ fontSize: 20 }}>🎁</Text>
+            <Text style={styles.rewardPointsCardTitle}>Reward Points</Text>
+          </View>
+          <Text style={styles.rewardPointsValue}>💰 {rewardPoints} points available</Text>
+          <Text style={styles.rewardPointsHint}>Earn more through daily goals and achievements</Text>
+          <TouchableOpacity 
+            style={styles.viewRewardsBtn}
+            onPress={() => router.push('/rewards')}
+          >
+            <Text style={styles.viewRewardsBtnText}>View Rewards Store</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.statsCards}>
@@ -483,8 +548,45 @@ const styles = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff' },
   hello: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  xpSmall: { color: '#e6ffe9', fontSize: 12 },
+  xpSmall: { color: '#e6ffe9', fontSize: 11, marginTop: 2 },
+  // XP badge under name - clickable
+  xpUnderName: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 4,
+    gap: 4,
+  },
+  xpUnderNameText: {
+    color: '#fef3c7',
+    fontWeight: '700',
+    fontSize: 12,
+  },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
+  // Reward points badge in header right
+  rewardPointsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef3c7',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 10,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+  },
+  rewardPointsEmoji: {
+    fontSize: 14,
+  },
+  rewardPointsText: {
+    color: '#b45309',
+    fontWeight: '700',
+    fontSize: 12,
+  },
   xpBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -649,8 +751,78 @@ const styles = StyleSheet.create({
 
   /* Awards */
   awardsHeader: { backgroundColor: '#fff5e9', padding: 16, borderRadius: 12, elevation: 1 },
-  awardsTitle: { fontWeight: '800', fontSize: 18 },
-  awardsXP: { marginTop: 6, color: '#b45309', fontSize: 15, fontWeight: '600' },
+  awardsTitle: { fontWeight: '800', fontSize: 20, marginBottom: 16 },
+  awardsXP: { marginTop: 4, color: '#b45309', fontSize: 14 },
+  xpCard: {
+    backgroundColor: '#fffbeb',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    marginBottom: 16,
+  },
+  xpCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  xpCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  levelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  levelTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  levelNext: {
+    fontSize: 12,
+    color: '#b45309',
+  },
+  rewardPointsCard: {
+    backgroundColor: '#f0fdf4',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  rewardPointsCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  rewardPointsValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#22c55e',
+    marginTop: 4,
+  },
+  rewardPointsHint: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  viewRewardsBtn: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  viewRewardsBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   progressBar: {
     height: 8,
     backgroundColor: '#ffe4c9',

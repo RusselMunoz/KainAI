@@ -199,6 +199,20 @@ export interface CookingModeState {
 
 export type TabName = 'Chat' | 'Recipes' | 'Community' | 'Awards';
 
+// ==================== MODULE STUBS ====================
+
+declare module 'react-native-zoom-reanimated' {
+  import { ReactNode } from 'react';
+  import { ViewProps } from 'react-native';
+
+  export type ZoomProps = ViewProps & {
+    children?: ReactNode;
+  };
+
+  const Zoom: (props: ZoomProps) => JSX.Element;
+  export default Zoom;
+}
+
 export interface TabSwitchContext {
   targetTab: TabName;
   recipeId?: string;

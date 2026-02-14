@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
+import { useUser } from '../../contexts/UserContext';
+import Avatar from '../../components/Avatar';
 
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
 
@@ -54,6 +56,7 @@ const SECTIONS = [
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { profile } = useUser();
 
   const onBack = () => {
     router.back();
@@ -101,6 +104,23 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
+        {/* User Profile Card with XP */}
+        <View style={styles.profileCard}>
+          <Avatar 
+            name={profile.displayName || 'User'} 
+            photoURL={profile.photoURL} 
+            size={60} 
+          />
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{profile.displayName || 'User'}</Text>
+            <Text style={styles.profileLevel}>{profile.cookingLevel}</Text>
+          </View>
+          <View style={styles.xpContainer}>
+            <Text style={styles.xpValue}>0</Text>
+            <Text style={styles.xpLabel}>XP</Text>
+          </View>
+        </View>
+
         {/* Debug button - easy access to test all screens */}
         <Pressable
           style={{
@@ -166,6 +186,53 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     marginLeft: 12,
+  },
+  // Profile Card with XP
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+  },
+  profileInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  profileLevel: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  xpContainer: {
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2bb673',
+  },
+  xpValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#2bb673',
+  },
+  xpLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2bb673',
   },
 
   container: {

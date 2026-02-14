@@ -207,7 +207,7 @@ class CommunityService {
       if (response.data.ok) {
         return response.data.comments.map((c: any) => ({
           ...c,
-          createdAt: new Date(c.createdAt),
+          createdAt: this.parseTimestamp(c.createdAt),
         }));
       }
       throw new Error(response.data.error || 'Failed to fetch comments');
@@ -215,6 +215,34 @@ class CommunityService {
       console.error('Error fetching comments:', error);
       return [];
     }
+  }
+
+  /**
+   * Parse timestamp from various formats
+   */
+  private parseTimestamp(timestamp: any): Date {
+    if (!timestamp) return new Date();
+    
+    // Already a Date
+    if (timestamp instanceof Date) return timestamp;
+    
+    // ISO string or numeric timestamp
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+      const parsed = new Date(timestamp);
+      return isNaN(parsed.getTime()) ? new Date() : parsed;
+    }
+    
+    // Firestore timestamp object { _seconds, _nanoseconds }
+    if (timestamp._seconds !== undefined) {
+      return new Date(timestamp._seconds * 1000);
+    }
+    
+    // Firestore timestamp with seconds
+    if (timestamp.seconds !== undefined) {
+      return new Date(timestamp.seconds * 1000);
+    }
+    
+    return new Date();
   }
 
   /**
@@ -309,6 +337,47 @@ class CommunityService {
       return response.data.ok;
     } catch (error: any) {
       console.error('Error deleting post:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Update a post
+   */
+  async updatePost(
+    postId: string, 
+    userId: string, 
+    updates: { title?: string; content?: string; tags?: string[] }
+  ): Promise<CommunityPost | null> {
+    try {
+      const response = await axios.put(`${API_BASE}/api/community/posts/${postId}`, {
+        userId,
+        ...updates,
+      });
+
+      if (response.data.ok) {
+        return this.parseDates([response.data.post])[0];
+      }
+      throw new Error(response.data.error || 'Failed to update post');
+    } catch (error: any) {
+      console.error('Error updating post:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete a comment
+   */
+  async deleteComment(postId: string, commentId: string, userId: string): Promise<boolean> {
+    try {
+      const response = await axios.delete(
+        `${API_BASE}/api/community/posts/${postId}/comments/${commentId}`,
+        { data: { userId } }
+      );
+
+      return response.data.ok;
+    } catch (error: any) {
+      console.error('Error deleting comment:', error);
       return false;
     }
   }

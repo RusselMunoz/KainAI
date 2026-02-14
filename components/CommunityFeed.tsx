@@ -17,7 +17,7 @@ import {
 import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import type { CommunityPost, PostType, CommunityStats, Recipe } from '../types';
+import type { CommunityPost, PostType, CommunityStats, Recipe, Comment } from '../types';
 import communityService from '../services/community.service';
 import recipeService from '../services/recipe.service';
 import uploadService from '../services/upload.service';
@@ -192,24 +192,7 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
         />
       </View>
 
-      {/* Filter Tabs */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterContainer}
-      >
-        {FILTERS.map(f => (
-          <TouchableOpacity
-            key={f.value}
-            style={[styles.filterTab, filter === f.value && styles.filterTabActive]}
-            onPress={() => setFilter(f.value)}
-          >
-            <Text style={[styles.filterText, filter === f.value && styles.filterTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* Filter tabs removed for cleaner UI */}
 
       {/* Share Button */}
       <TouchableOpacity style={styles.shareButton} onPress={onSharePress}>
@@ -235,6 +218,12 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
               onSave={() => handleSave(post.id)}
               onSaveToArchive={() => handleSaveToArchive(post)}
               onViewRecipe={onViewRecipe}
+              onPostDeleted={() => {
+                setPosts(prev => prev.filter(p => p.id !== post.id));
+              }}
+              onPostUpdated={(updatedPost) => {
+                setPosts(prev => prev.map(p => p.id === post.id ? updatedPost : p));
+              }}
             />
           ))
         )}
@@ -251,12 +240,25 @@ interface PostCardProps {
   onSave: () => void;
   onSaveToArchive: () => void;
   onViewRecipe?: (recipeId: string, authorId: string) => void;
+  onPostDeleted?: () => void;
+  onPostUpdated?: (updatedPost: CommunityPost) => void;
 }
 
-function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe }: PostCardProps) {
+function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe, onPostDeleted, onPostUpdated }: PostCardProps) {
   const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showUserPopup, setShowUserPopup] = useState(false);
+  const [editTitle, setEditTitle] = useState(post.title);
+  const [editContent, setEditContent] = useState(post.content);
+  const [saving, setSaving] = useState(false);
+  
   const isLiked = post.likedBy.includes(userId);
   const isSaved = post.savedBy.includes(userId);
+  const isOwnPost = post.authorId === userId;
   
   const typeColors: Record<PostType, string> = {
     recipe: '#ef4444',
@@ -267,11 +269,102 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe 
 
   const relativeTime = communityService.formatRelativeTime(post.createdAt);
 
+  const loadComments = async () => {
+    setLoadingComments(true);
+    const fetchedComments = await communityService.getComments(post.id);
+    setComments(fetchedComments);
+    setLoadingComments(false);
+  };
+
+  const handleToggleComments = () => {
+    const newShowComments = !showComments;
+    setShowComments(newShowComments);
+    if (newShowComments && comments.length === 0) {
+      loadComments();
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    if (!newComment.trim()) return;
+    
+    setSubmittingComment(true);
+    const comment = await communityService.addComment(post.id, userId, newComment.trim());
+    if (comment) {
+      setComments(prev => [comment, ...prev]);
+      setNewComment('');
+      post.commentsCount++; // Update local count
+    }
+    setSubmittingComment(false);
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    Alert.alert(
+      'Delete Comment?',
+      'This will permanently delete your comment.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await communityService.deleteComment(post.id, commentId, userId);
+            if (success) {
+              setComments(prev => prev.filter(c => c.id !== commentId));
+              post.commentsCount--; // Update local count
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeletePost = async () => {
+    Alert.alert(
+      'Delete Post?',
+      'This will permanently delete this post and all its comments.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await communityService.deletePost(post.id, userId);
+            if (success) {
+              onPostDeleted?.();
+            } else {
+              Alert.alert('Error', 'Failed to delete post');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEditPost = async () => {
+    setSaving(true);
+    const updated = await communityService.updatePost(post.id, userId, {
+      title: editTitle,
+      content: editContent,
+    });
+    setSaving(false);
+    
+    if (updated) {
+      setShowEditModal(false);
+      onPostUpdated?.(updated);
+    } else {
+      Alert.alert('Error', 'Failed to update post');
+    }
+  };
+
   return (
     <View style={styles.postCard}>
       {/* Post Header */}
       <View style={styles.postHeader}>
-        <View style={styles.authorInfo}>
+        <TouchableOpacity 
+          style={styles.authorInfo}
+          onPress={() => setShowUserPopup(true)}
+          activeOpacity={0.7}
+        >
           <Avatar 
             name={post.authorName} 
             photoURL={post.authorPhotoURL} 
@@ -286,11 +379,29 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe 
               </View>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
         
-        <View style={styles.ratingContainer}>
-          <AntDesign name="star" size={14} color="#f59e0b" />
-          <Text style={styles.ratingValue}>{post.rating.toFixed(1)}</Text>
+        <View style={styles.headerRight}>
+          {isOwnPost && (
+            <View style={styles.postActions}>
+              <TouchableOpacity 
+                style={styles.postActionBtn} 
+                onPress={() => setShowEditModal(true)}
+              >
+                <Feather name="edit-2" size={14} color="#3b82f6" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.postActionBtn} 
+                onPress={handleDeletePost}
+              >
+                <Feather name="trash-2" size={14} color="#ef4444" />
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={styles.ratingContainer}>
+            <AntDesign name="star" size={14} color="#f59e0b" />
+            <Text style={styles.ratingValue}>{post.rating.toFixed(1)}</Text>
+          </View>
         </View>
       </View>
 
@@ -339,20 +450,23 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe 
           
           <TouchableOpacity 
             style={styles.engagementBtn} 
-            onPress={() => setShowComments(!showComments)}
+            onPress={handleToggleComments}
           >
-            <Feather name="message-circle" size={18} color="#666" />
-            <Text style={styles.engagementText}>{post.commentsCount}</Text>
+            <Feather name="message-circle" size={18} color={showComments ? '#3b82f6' : '#666'} />
+            <Text style={[styles.engagementText, showComments && { color: '#3b82f6' }]}>
+              {post.commentsCount}
+            </Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.engagementRight}>
-          {post.recipeId && (
+          {post.recipeId && onViewRecipe && (
             <TouchableOpacity 
-              style={styles.saveArchiveBtn}
-              onPress={onSaveToArchive}
+              style={styles.cookRecipeBtn}
+              onPress={() => onViewRecipe(post.recipeId!, post.authorId)}
             >
-              <Feather name="download" size={16} color="#2bb673" />
+              <MaterialCommunityIcons name="chef-hat" size={14} color="#fff" />
+              <Text style={styles.cookRecipeBtnText}>Cook This</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.engagementBtn} onPress={onSave}>
@@ -369,6 +483,184 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe 
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Comments Section */}
+      {showComments && (
+        <View style={styles.commentsSection}>
+          {/* Comment Input */}
+          <View style={styles.commentInputContainer}>
+            <TextInput
+              style={styles.commentTextInput}
+              placeholder="Write a comment..."
+              placeholderTextColor="#999"
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+            />
+            <TouchableOpacity 
+              style={[styles.sendCommentBtn, !newComment.trim() && styles.sendCommentBtnDisabled]}
+              onPress={handleSubmitComment}
+              disabled={!newComment.trim() || submittingComment}
+            >
+              {submittingComment ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Feather name="send" size={16} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Comments List */}
+          {loadingComments ? (
+            <View style={styles.commentsLoading}>
+              <ActivityIndicator size="small" color="#2bb673" />
+              <Text style={styles.commentsLoadingText}>Loading comments...</Text>
+            </View>
+          ) : comments.length === 0 ? (
+            <Text style={styles.noCommentsText}>No comments yet. Be the first to comment!</Text>
+          ) : (
+            <View style={styles.commentsList}>
+              {comments.map(comment => (
+                <View key={comment.id} style={styles.commentItem}>
+                  <Avatar 
+                    name={comment.authorName} 
+                    photoURL={comment.authorPhotoURL} 
+                    size={28} 
+                  />
+                  <View style={styles.commentContent}>
+                    <View style={styles.commentHeader}>
+                      <Text style={styles.commentAuthor}>{comment.authorName}</Text>
+                      <Text style={styles.commentTime}>
+                        {communityService.formatRelativeTime(comment.createdAt)}
+                      </Text>
+                    </View>
+                    <Text style={styles.commentText}>{comment.content}</Text>
+                  </View>
+                  {(comment.authorId === userId || isOwnPost) && (
+                    <TouchableOpacity 
+                      style={styles.deleteCommentBtn}
+                      onPress={() => handleDeleteComment(comment.id)}
+                    >
+                      <Feather name="x" size={14} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Edit Post Modal */}
+      <Modal
+        visible={showEditModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.editModalContent}>
+            <View style={styles.editModalHeader}>
+              <Text style={styles.editModalTitle}>Edit Post</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <AntDesign name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.editLabel}>Title</Text>
+            <TextInput
+              style={styles.editTitleInput}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="Post title"
+              placeholderTextColor="#999"
+            />
+
+            <Text style={styles.editLabel}>Content</Text>
+            <TextInput
+              style={styles.editContentInput}
+              value={editContent}
+              onChangeText={setEditContent}
+              placeholder="Post content"
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={4}
+            />
+
+            <View style={styles.editModalActions}>
+              <TouchableOpacity 
+                style={styles.editCancelBtn} 
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.editCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.editSaveBtn, saving && styles.editSaveBtnDisabled]}
+                onPress={handleEditPost}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.editSaveBtnText}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* User Profile Popup Modal */}
+      <Modal
+        visible={showUserPopup}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUserPopup(false)}
+      >
+        <TouchableOpacity 
+          style={styles.userPopupOverlay}
+          activeOpacity={1}
+          onPress={() => setShowUserPopup(false)}
+        >
+          <View style={styles.userPopupContent}>
+            <View style={styles.userPopupHeader}>
+              <Avatar 
+                name={post.authorName} 
+                photoURL={post.authorPhotoURL} 
+                size={60} 
+              />
+              <View style={styles.userPopupInfo}>
+                <Text style={styles.userPopupName}>{post.authorName}</Text>
+                <Text style={styles.userPopupMeta}>Community Member</Text>
+              </View>
+            </View>
+            
+            <View style={styles.userPopupStats}>
+              <View style={styles.userPopupStat}>
+                <Text style={styles.userPopupStatValue}>-</Text>
+                <Text style={styles.userPopupStatLabel}>Recipes</Text>
+              </View>
+              <View style={styles.userPopupStatDivider} />
+              <View style={styles.userPopupStat}>
+                <Text style={styles.userPopupStatValue}>-</Text>
+                <Text style={styles.userPopupStatLabel}>Posts</Text>
+              </View>
+              <View style={styles.userPopupStatDivider} />
+              <View style={styles.userPopupStat}>
+                <Text style={styles.userPopupStatValue}>-</Text>
+                <Text style={styles.userPopupStatLabel}>XP</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.userPopupCloseBtn}
+              onPress={() => setShowUserPopup(false)}
+            >
+              <Text style={styles.userPopupCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -900,6 +1192,21 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 8,
   },
+  cookRecipeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2bb673',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 8,
+    gap: 4,
+  },
+  cookRecipeBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   // Share Modal Styles
   modalOverlay: {
     flex: 1,
@@ -1022,6 +1329,255 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ff8a3d',
     marginTop: 2,
+  },
+  // Header Right (rating + post actions)
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  postActions: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  postActionBtn: {
+    padding: 6,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 6,
+  },
+  // Comments Section Styles
+  commentsSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginBottom: 12,
+  },
+  commentTextInput: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#333',
+    maxHeight: 80,
+  },
+  sendCommentBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#2bb673',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendCommentBtnDisabled: {
+    backgroundColor: '#ccc',
+  },
+  commentsLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  commentsLoadingText: {
+    color: '#666',
+    fontSize: 13,
+  },
+  noCommentsText: {
+    color: '#999',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 16,
+    fontStyle: 'italic',
+  },
+  commentsList: {
+    gap: 12,
+  },
+  commentItem: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  commentContent: {
+    flex: 1,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 10,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  commentAuthor: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+  commentTime: {
+    fontSize: 11,
+    color: '#999',
+  },
+  commentText: {
+    fontSize: 13,
+    color: '#555',
+    lineHeight: 18,
+  },
+  deleteCommentBtn: {
+    padding: 4,
+  },
+  // Edit Modal Styles
+  editModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  editModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1a1a1a',
+  },
+  editLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  editTitleInput: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#333',
+  },
+  editContentInput: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#333',
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  editModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 24,
+  },
+  editCancelBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+  },
+  editCancelBtnText: {
+    fontSize: 15,
+    color: '#666',
+  },
+  editSaveBtn: {
+    backgroundColor: '#2bb673',
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+  },
+  editSaveBtnDisabled: {
+    opacity: 0.6,
+  },
+  editSaveBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  // User Profile Popup Styles
+  userPopupOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userPopupContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: '80%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  userPopupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 16,
+  },
+  userPopupInfo: {
+    marginLeft: 14,
+    flex: 1,
+  },
+  userPopupName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  userPopupMeta: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  userPopupStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#e5e7eb',
+    marginBottom: 16,
+  },
+  userPopupStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  userPopupStatValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2bb673',
+  },
+  userPopupStatLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  userPopupStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
+  },
+  userPopupCloseBtn: {
+    backgroundColor: '#f3f4f6',
+    paddingVertical: 10,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+  },
+  userPopupCloseBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
   },
 });
 

@@ -4,6 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Must match UserContext storage key
+const PROFILE_KEY = '@cheffy_user_profile';
+
 export default function EndStep() {
   const router = useRouter();
   const [profile, setProfile] = useState<{ name: string; prefs: string; allergies: string; level: string } | null>(null);
@@ -22,6 +25,22 @@ export default function EndStep() {
       if (!cancelled) setProfile(final);
 
       try {
+        // Parse comma-separated strings into arrays for UserContext format
+        const prefsArray = prefs === 'None' ? [] : prefs.split(',').map(s => s.trim()).filter(Boolean);
+        const allergiesArray = allergies === 'None' ? [] : allergies.split(',').map(s => s.trim()).filter(Boolean);
+
+        // Save in UserContext format (UserProfile interface)
+        const userProfile = {
+          displayName: name,
+          bio: '',
+          photoURL: null,
+          dietaryPreferences: prefsArray,
+          allergies: allergiesArray,
+          cookingLevel: level,
+        };
+
+        await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(userProfile));
+        // Also keep legacy format for backwards compatibility
         await AsyncStorage.setItem('profile', JSON.stringify(final));
         await AsyncStorage.multiRemove(['onboard_name','onboard_prefs','onboard_allergies','onboard_level']);
       } catch (e) {

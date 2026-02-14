@@ -9,7 +9,9 @@
     "clear-cache": "node ./scripts/clear-cache.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "debug:stats": "node ./scripts/debug-stats.js",
+    "debug:reset-recipes": "node ./scripts/reset-recipes.js"
   },
   "dependencies": {
     "@cloudinary/url-gen": "^1.21.0",

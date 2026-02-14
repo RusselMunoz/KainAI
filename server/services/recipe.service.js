@@ -173,17 +173,49 @@ function parseAIRecipeResponse(aiResponse) {
  * Parse a single ingredient line
  */
 function parseIngredient(line) {
-  const cleanLine = line.replace(/^[-•\d.)\s]+/, '').trim();
+  // Clean the line - remove bullets, numbers, and sanitize encoding
+  let cleanLine = line.replace(/^[-•\d.)\s]+/, '').trim();
   if (!cleanLine) return null;
 
-  // Try to extract amount and unit
-  const match = cleanLine.match(/^([\d\/\s.]+)?\s*(cup|cups|tbsp|tsp|oz|lb|g|kg|ml|liter|piece|pieces|clove|cloves)?\s*(.+)/i);
+  // Fix common encoding issues
+  cleanLine = cleanLine
+    .replace(/[]/g, '')  // Remove replacement characters
+    .replace(/â€"/g, '-')   // Fix dashes
+    .replace(/â€™/g, "'")   // Fix apostrophes
+    .replace(/Â/g, '')      // Remove Â character
+    .trim();
+
+  // Normalize unicode fractions to ASCII
+  const fractionMap = {
+    '½': '1/2', '⅓': '1/3', '⅔': '2/3', '¼': '1/4', '¾': '3/4',
+    '⅕': '1/5', '⅖': '2/5', '⅗': '3/5', '⅘': '4/5',
+    '⅙': '1/6', '⅚': '5/6', '⅛': '1/8', '⅜': '3/8', '⅝': '5/8', '⅞': '7/8'
+  };
+  for (const [unicode, ascii] of Object.entries(fractionMap)) {
+    cleanLine = cleanLine.replace(new RegExp(unicode, 'g'), ascii);
+  }
+
+  // Try to extract amount and unit with improved regex
+  // Handles: "1/4 cup soy sauce", "2 tbsp oil", "3 cloves garlic", "salt (to taste)"
+  const match = cleanLine.match(/^([\d\/\s.]+)?\s*(cups?|tbsps?|tsps?|oz|lbs?|g|kg|ml|liters?|pieces?|cloves?|stalks?|heads?|bunches?|cans?|pinch|dash)?\s*[of]?\s*(.+)/i);
   
   if (match) {
+    let amount = match[1]?.trim();
+    const unit = match[2]?.toLowerCase()?.replace(/s$/, '') || 'piece'; // Normalize plurals
+    let name = match[3]?.trim() || cleanLine;
+    
+    // Validate amount - don't use null or empty string
+    if (!amount || amount === '' || amount === 'null' || amount === 'undefined') {
+      amount = '1';
+    }
+    
+    // Clean name - remove any leftover "of" and parenthetical notes
+    name = name.replace(/^of\s+/i, '').trim();
+    
     return {
-      name: match[3]?.trim() || cleanLine,
-      amount: match[1]?.trim() || '1',
-      unit: match[2]?.toLowerCase() || 'piece',
+      name: name || cleanLine,
+      amount: amount,
+      unit: unit,
       category: categorizeIngredient(cleanLine),
       notes: ''
     };

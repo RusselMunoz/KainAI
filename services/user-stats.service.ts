@@ -37,6 +37,7 @@ export const XP_REWARDS = {
 
 export interface UserStats {
   xp: number;
+  rewardPoints: number;  // Separate currency for rewards store
   level: string;
   recipesCompleted: number;
   recipesShared: number;
@@ -51,6 +52,7 @@ export interface UserStats {
 
 const DEFAULT_STATS: UserStats = {
   xp: 0,
+  rewardPoints: 0,
   level: 'Beginner',
   recipesCompleted: 0,
   recipesShared: 0,
@@ -280,6 +282,65 @@ class UserStatsService {
     this.stats = { ...DEFAULT_STATS };
     await this.saveStats();
     console.log('🔄 Stats reset');
+  }
+
+  // ==================== REWARD POINTS SYSTEM ====================
+
+  /**
+   * Award reward points (separate from XP)
+   */
+  async awardRewardPoints(amount: number, reason: string): Promise<number> {
+    this.stats.rewardPoints += amount;
+    await this.saveStats();
+    console.log(`🎁 Awarded ${amount} reward points for ${reason}. Total: ${this.stats.rewardPoints}`);
+    return this.stats.rewardPoints;
+  }
+
+  /**
+   * Deduct reward points (for redemptions)
+   */
+  async deductRewardPoints(amount: number): Promise<{ success: boolean; remaining: number }> {
+    if (this.stats.rewardPoints >= amount) {
+      this.stats.rewardPoints -= amount;
+      await this.saveStats();
+      return { success: true, remaining: this.stats.rewardPoints };
+    }
+    return { success: false, remaining: this.stats.rewardPoints };
+  }
+
+  /**
+   * Get current reward points
+   */
+  getRewardPoints(): number {
+    return this.stats.rewardPoints;
+  }
+
+  /**
+   * Modify reward points (for debug)
+   */
+  async modifyRewardPoints(amount: number): Promise<number> {
+    this.stats.rewardPoints = Math.max(0, this.stats.rewardPoints + amount);
+    await this.saveStats();
+    return this.stats.rewardPoints;
+  }
+
+  /**
+   * Reset only reward points
+   */
+  async resetRewardPoints(): Promise<void> {
+    this.stats.rewardPoints = 0;
+    await this.saveStats();
+    console.log('🔄 Reward points reset to 0');
+  }
+
+  /**
+   * Reset only XP (for debug)
+   */
+  async resetXP(): Promise<void> {
+    this.stats.xp = 0;
+    this.stats.level = 'Beginner';
+    await this.saveStats();
+    console.log('🔄 XP reset to 0');
   }
 }
 

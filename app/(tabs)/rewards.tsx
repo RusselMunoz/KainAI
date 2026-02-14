@@ -11,10 +11,23 @@ import {
   RefreshControl,
   ActivityIndicator,
   Animated,
+  Alert,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Feather from '@expo/vector-icons/Feather';
-import userStatsService, { UserStats, XP_REWARDS } from '../../services/user-stats.service';
+import { useRouter } from 'expo-router';
+import { useUser, UserStats } from '../../contexts/UserContext';
+import { XP_REWARDS as ACTION_REWARD_POINTS } from '../../services/user-stats.service';
+
+// Weekly goal targets
+const WEEKLY_GOAL_TARGETS = {
+  recipesCooked: 3,
+  newIngredientsTried: 5,
+  creationsShared: 2,
+};
+
+// Points awarded per goal completion
+const GOAL_REWARD_POINTS = 50;
 
 // Weekly Goals for Tier 2
 interface WeeklyGoal {
@@ -23,19 +36,20 @@ interface WeeklyGoal {
   description: string;
   current: number;
   target: number;
-  xpReward: number;
+  rewardPoints: number;
   icon: string;
   type: 'recipes' | 'shares' | 'ingredients' | 'streak';
+  completed: boolean;
 }
 
 // Tier 1 instant rewards data
 const INSTANT_REWARDS = [
-  { action: 'Complete a recipe', xp: XP_REWARDS.COMPLETE_RECIPE, icon: 'checkmark-circle' },
-  { action: 'Share your creation', xp: XP_REWARDS.SHARE_CREATION, icon: 'share-social' },
-  { action: 'Try a new ingredient', xp: XP_REWARDS.TRY_NEW_INGREDIENT, icon: 'leaf' },
-  { action: 'Comment on community post', xp: XP_REWARDS.COMMUNITY_COMMENT, icon: 'chatbubble' },
-  { action: 'Daily cooking streak', xp: XP_REWARDS.DAILY_STREAK, icon: 'flame' },
-  { action: 'Rate a recipe', xp: XP_REWARDS.RATE_RECIPE, icon: 'star' },
+  { action: 'Complete a recipe', points: ACTION_REWARD_POINTS.COMPLETE_RECIPE, icon: 'checkmark-circle' },
+  { action: 'Share your creation', points: ACTION_REWARD_POINTS.SHARE_CREATION, icon: 'share-social' },
+  { action: 'Try a new ingredient', points: ACTION_REWARD_POINTS.TRY_NEW_INGREDIENT, icon: 'leaf' },
+  { action: 'Comment on community post', points: ACTION_REWARD_POINTS.COMMUNITY_COMMENT, icon: 'chatbubble' },
+  { action: 'Daily cooking streak', points: ACTION_REWARD_POINTS.DAILY_STREAK, icon: 'flame' },
+  { action: 'Rate a recipe', points: ACTION_REWARD_POINTS.RATE_RECIPE, icon: 'star' },
 ];
 
 // Coming Soon rewards for Tier 3
@@ -47,84 +61,144 @@ const COMING_SOON_REWARDS = [
 ];
 
 export default function RewardsScreen() {
-  const [stats, setStats] = useState<UserStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { stats, updateStats, refreshStats, loading } = useUser();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTier, setSelectedTier] = useState<1 | 2 | 3>(1);
+  const [showDebug, setShowDebug] = useState(__DEV__); // Show debug panel in dev mode
 
-  const loadData = useCallback(async () => {
-    try {
-      const userStats = await userStatsService.loadStats();
-      setStats(userStats);
-    } catch (error) {
-      console.error('Error loading rewards data:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    loadData();
-  }, [loadData]);
+    await refreshStats();
+    setRefreshing(false);
+  }, [refreshStats]);
 
-  // Calculate weekly goals based on stats
+  // Calculate weekly goals based on stats from context
   const getWeeklyGoals = (): WeeklyGoal[] => {
-    if (!stats) return [];
+    const goals = stats.weeklyGoals;
+    const completedGoals = goals.goalsCompletedThisWeek || [];
     
     return [
       {
         id: 'weekly-recipes',
         title: 'Chef in Training',
         description: 'Complete 3 recipes this week',
-        current: Math.min(stats.recipesCompleted % 3, 3), // Reset weekly
-        target: 3,
-        xpReward: 50,
+        current: goals.recipesCooked,
+        target: WEEKLY_GOAL_TARGETS.recipesCooked,
+        rewardPoints: GOAL_REWARD_POINTS,
         icon: 'restaurant',
         type: 'recipes',
+        completed: completedGoals.includes('weekly-recipes'),
       },
       {
         id: 'weekly-shares',
         title: 'Community Star',
         description: 'Share 2 recipes with the community',
-        current: Math.min(stats.recipesShared % 2, 2),
-        target: 2,
-        xpReward: 30,
+        current: goals.creationsShared,
+        target: WEEKLY_GOAL_TARGETS.creationsShared,
+        rewardPoints: GOAL_REWARD_POINTS,
         icon: 'people',
         type: 'shares',
+        completed: completedGoals.includes('weekly-shares'),
       },
       {
         id: 'weekly-ingredients',
         title: 'Ingredient Explorer',
         description: 'Try 5 new ingredients',
-        current: Math.min(stats.uniqueIngredients.length % 5, 5),
-        target: 5,
-        xpReward: 40,
+        current: goals.newIngredientsTried,
+        target: WEEKLY_GOAL_TARGETS.newIngredientsTried,
+        rewardPoints: GOAL_REWARD_POINTS,
         icon: 'leaf',
         type: 'ingredients',
-      },
-      {
-        id: 'weekly-streak',
-        title: 'Consistency King',
-        description: 'Maintain a 7-day cooking streak',
-        current: Math.min(stats.currentStreak, 7),
-        target: 7,
-        xpReward: 75,
-        icon: 'flame',
-        type: 'streak',
+        completed: completedGoals.includes('weekly-ingredients'),
       },
     ];
   };
 
+  // Debug: Complete a weekly goal
+  const debugCompleteGoal = async (goalId: string, goalType: string) => {
+    const goals = stats.weeklyGoals;
+    const completedGoals = [...(goals.goalsCompletedThisWeek || [])];
+    
+    if (completedGoals.includes(goalId)) {
+      Alert.alert('Already Completed', 'This goal was already completed this week.');
+      return;
+    }
+    
+    // Set progress to target based on goal type
+    const updatedGoals = { ...goals };
+    if (goalType === 'recipes') {
+      updatedGoals.recipesCooked = WEEKLY_GOAL_TARGETS.recipesCooked;
+    } else if (goalType === 'shares') {
+      updatedGoals.creationsShared = WEEKLY_GOAL_TARGETS.creationsShared;
+    } else if (goalType === 'ingredients') {
+      updatedGoals.newIngredientsTried = WEEKLY_GOAL_TARGETS.newIngredientsTried;
+    }
+    
+    // Mark as completed and award points
+    completedGoals.push(goalId);
+    updatedGoals.goalsCompletedThisWeek = completedGoals;
+    
+    const newRewardPoints = stats.rewardPoints + GOAL_REWARD_POINTS;
+    
+    await updateStats({ 
+      weeklyGoals: updatedGoals,
+      rewardPoints: newRewardPoints,
+    });
+    
+    Alert.alert('🎉 Goal Completed!', `+${GOAL_REWARD_POINTS} reward points earned!`);
+  };
+
+  // Debug: Reset a weekly goal's progress
+  const debugResetGoal = async (goalType: string) => {
+    const goals = { ...stats.weeklyGoals };
+    
+    if (goalType === 'recipes') {
+      goals.recipesCooked = 0;
+    } else if (goalType === 'shares') {
+      goals.creationsShared = 0;
+    } else if (goalType === 'ingredients') {
+      goals.newIngredientsTried = 0;
+    }
+    
+    // Remove from completed list
+    goals.goalsCompletedThisWeek = (goals.goalsCompletedThisWeek || []).filter(
+      id => !id.includes(goalType.slice(0, 4))
+    );
+    
+    await updateStats({ weeklyGoals: goals });
+    Alert.alert('Reset', 'Goal progress has been reset.');
+  };
+
+  // Debug: Reset all weekly goals
+  const debugResetAllGoals = async () => {
+    Alert.alert(
+      'Reset All Goals?',
+      'This will reset all weekly goal progress. Points already earned will not be removed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset All',
+          style: 'destructive',
+          onPress: async () => {
+            await updateStats({
+              weeklyGoals: {
+                recipesCooked: 0,
+                newIngredientsTried: 0,
+                creationsShared: 0,
+                goalsCompletedThisWeek: [],
+                lastResetDate: new Date().toISOString(),
+              },
+            });
+            Alert.alert('Reset', 'All weekly goals have been reset.');
+          },
+        },
+      ]
+    );
+  };
+
   // Calculate XP progress to next level
   const getXPProgress = () => {
-    if (!stats) return { current: 0, next: 100, progress: 0 };
-    
     const levels = [
       { level: 'Beginner', minXP: 0 },
       { level: 'Novice Cook', minXP: 200 },
@@ -170,27 +244,14 @@ export default function RewardsScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Feather name="arrow-left" size={20} color="#fff" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>🏆 Rewards</Text>
         <View style={styles.xpBadge}>
-          <Ionicons name="star" size={16} color="#f59e0b" />
-          <Text style={styles.xpBadgeText}>{stats?.xp || 0} XP</Text>
+          <Ionicons name="gift" size={16} color="#f59e0b" />
+          <Text style={styles.xpBadgeText}>{stats.rewardPoints} pts</Text>
         </View>
-      </View>
-
-      {/* Level Progress Card */}
-      <View style={styles.levelCard}>
-        <View style={styles.levelHeader}>
-          <Text style={styles.levelTitle}>{stats?.level || 'Beginner'}</Text>
-          <Text style={styles.levelNext}>
-            {xpProgress.nextLevel ? `→ ${xpProgress.nextLevel}` : ''}
-          </Text>
-        </View>
-        <View style={styles.progressBarContainer}>
-          <View style={[styles.progressBar, { width: `${xpProgress.progress * 100}%` }]} />
-        </View>
-        <Text style={styles.progressText}>
-          {xpProgress.current} / {xpProgress.next} XP
-        </Text>
       </View>
 
       {/* Tier Tabs */}
@@ -234,7 +295,7 @@ export default function RewardsScreen() {
         {selectedTier === 1 && (
           <View style={styles.tierContent}>
             <Text style={styles.tierDescription}>
-              Earn XP instantly for every action you take!
+              Earn reward points instantly for every action you take!
             </Text>
             {INSTANT_REWARDS.map((reward, index) => (
               <View key={index} style={styles.instantRewardCard}>
@@ -245,8 +306,8 @@ export default function RewardsScreen() {
                   <Text style={styles.instantRewardAction}>{reward.action}</Text>
                 </View>
                 <View style={styles.instantRewardXP}>
-                  <Text style={styles.xpValue}>+{reward.xp}</Text>
-                  <Text style={styles.xpLabel}>XP</Text>
+                  <Text style={styles.xpValue}>+{reward.points}</Text>
+                  <Text style={styles.xpLabel}>PTS</Text>
                 </View>
               </View>
             ))}
@@ -257,7 +318,7 @@ export default function RewardsScreen() {
         {selectedTier === 2 && (
           <View style={styles.tierContent}>
             <Text style={styles.tierDescription}>
-              Complete weekly challenges for bonus XP!
+              Complete weekly challenges for bonus reward points!
             </Text>
             {weeklyGoals.map((goal) => (
               <View key={goal.id} style={styles.goalCard}>
@@ -270,8 +331,8 @@ export default function RewardsScreen() {
                     <Text style={styles.goalDescription}>{goal.description}</Text>
                   </View>
                   <View style={styles.goalReward}>
-                    <Text style={styles.goalXP}>+{goal.xpReward}</Text>
-                    <Text style={styles.goalXPLabel}>XP</Text>
+                    <Text style={styles.goalXP}>+{goal.rewardPoints}</Text>
+                    <Text style={styles.goalXPLabel}>PTS</Text>
                   </View>
                 </View>
                 <View style={styles.goalProgressContainer}>
@@ -316,9 +377,59 @@ export default function RewardsScreen() {
             <View style={styles.teaser}>
               <Ionicons name="sparkles" size={32} color="#f59e0b" />
               <Text style={styles.teaserText}>
-                Keep cooking and earning XP! Real rewards are almost here.
+                Keep cooking and earning reward points! Real rewards are almost here.
               </Text>
             </View>
+          </View>
+        )}
+
+        {/* Debug Panel - Only visible in DEV mode */}
+        {showDebug && (
+          <View style={styles.debugPanel}>
+            <View style={styles.debugHeader}>
+              <Feather name="cpu" size={18} color="#e74c3c" />
+              <Text style={styles.debugTitle}>Debug: Weekly Goals</Text>
+              <TouchableOpacity onPress={() => setShowDebug(false)}>
+                <Feather name="x" size={18} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            {weeklyGoals.map((goal) => (
+              <View key={`debug-${goal.id}`} style={styles.debugGoalRow}>
+                <View style={styles.debugGoalInfo}>
+                  <Text style={styles.debugGoalTitle}>{goal.title}</Text>
+                  <Text style={styles.debugGoalProgress}>
+                    Progress: {goal.current}/{goal.target}
+                    {goal.completed && ' ✅'}
+                  </Text>
+                </View>
+                <View style={styles.debugBtnRow}>
+                  <TouchableOpacity 
+                    style={[styles.debugBtn, styles.debugBtnGreen]}
+                    onPress={() => debugCompleteGoal(goal.id, goal.type)}
+                  >
+                    <Text style={styles.debugBtnText}>Complete</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.debugBtn, styles.debugBtnRed]}
+                    onPress={() => debugResetGoal(goal.type)}
+                  >
+                    <Text style={styles.debugBtnText}>Reset</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+            
+            <TouchableOpacity 
+              style={styles.debugResetAllBtn}
+              onPress={debugResetAllGoals}
+            >
+              <Text style={styles.debugResetAllText}>Reset All Weekly Goals</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.debugNote}>
+              Current Reward Points: {stats.rewardPoints}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -351,10 +462,20 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingHorizontal: 20,
   },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+    flex: 1,
+    marginLeft: 12,
   },
   xpBadge: {
     flexDirection: 'row',
@@ -424,6 +545,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+    marginTop: 20,
   },
   tierTab: {
     flex: 1,
@@ -636,5 +758,87 @@ const styles = StyleSheet.create({
     color: '#92400e',
     textAlign: 'center',
     fontWeight: '500',
+  },
+  
+  // Debug Panel styles
+  debugPanel: {
+    backgroundColor: '#fff5f5',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 24,
+    marginBottom: 40,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  debugHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  debugTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#e74c3c',
+  },
+  debugGoalRow: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#fee2e2',
+  },
+  debugGoalInfo: {
+    marginBottom: 8,
+  },
+  debugGoalTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  debugGoalProgress: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  debugBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  debugBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  debugBtnGreen: {
+    backgroundColor: '#22c55e',
+  },
+  debugBtnRed: {
+    backgroundColor: '#ef4444',
+  },
+  debugBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  debugResetAllBtn: {
+    backgroundColor: '#7c3aed',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  debugResetAllText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  debugNote: {
+    marginTop: 12,
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
   },
 });

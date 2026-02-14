@@ -46,6 +46,11 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   const [inputText, setInputText] = useState(''); // Track input text for manual send
   const [pendingAddIngredients, setPendingAddIngredients] = useState<string[] | null>(null); // Track ingredients when adding more
   
+  // Check if there's an active confirmation message requiring button interaction
+  const hasActiveConfirmation = messages.some(
+    m => m.messageType === MESSAGE_TYPE_CONFIRMATION || m.messageType === MESSAGE_TYPE_ADD_MORE
+  );
+  
   // Debug: Log when component mounts
   useEffect(() => {
     if (DEBUG_MODE) {
@@ -584,13 +589,19 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         }} 
         user={{ _id: 1 }} 
         isTyping={isTyping}
-        alwaysShowSend={true}
+        alwaysShowSend={!hasActiveConfirmation}
         text={inputText}
         onInputTextChanged={setInputText}
         renderBubble={renderBubble}
+        textInputProps={{
+          editable: !hasActiveConfirmation,
+          placeholder: hasActiveConfirmation 
+            ? 'Please select an option above...' 
+            : 'Type your ingredients...'
+        }}
         renderSend={(props) => {
-          // Don't show send button if no text
-          if (!inputText.trim()) {
+          // Don't show send button if no text or if confirmation is active
+          if (!inputText.trim() || hasActiveConfirmation) {
             return null;
           }
           return (
@@ -687,24 +698,23 @@ const styles = StyleSheet.create({
   confirmationBubble: {
     marginBottom: 10,
     marginLeft: 10,
-    maxWidth: '85%',
+    width: '85%',  // Match bubble width
   },
   confirmButtonsInBubble: {
     flexDirection: 'row',
     marginTop: 8,
-    marginLeft: 10,
     gap: 10,
   },
   confirmButtonsColumn: {
-    marginTop: 8,
-    marginLeft: 10,
+    marginTop: 10,
     gap: 8,
+    width: '100%',  // Full width of bubble container
   },
   fullWidthBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 12,
-    minWidth: 200,
+    width: '100%',  // Match bubble width exactly
     alignItems: 'center',
   },
   fullWidthBtnText: {
