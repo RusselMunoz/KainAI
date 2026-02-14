@@ -1,15 +1,23 @@
 // config/firebase.ts - Firebase initialization and configuration
-// Handles both production Firebase and demo mode for development
+// Uses Firebase JS SDK for Expo Go compatibility
 
-import firebase from '@react-native-firebase/app';
-import auth from '@react-native-firebase/auth';
-// Note: @react-native-firebase/firestore needs to be installed for production
-// For now, we'll use a mock Firestore interface that falls back to the backend API
+import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+
+// Firebase configuration from google-services.json
+const firebaseConfig = {
+  apiKey: 'AIzaSyAdND0GiDdiUqTr4tLrH4XN8Q2cTIYfSms',
+  authDomain: 'cheffy-d7701.firebaseapp.com',
+  projectId: 'cheffy-d7701',
+  storageBucket: 'cheffy-d7701.firebasestorage.app',
+  messagingSenderId: '953646495667',
+  appId: '1:953646495667:android:db1c4415d664cd50d67dc6',
+};
 
 /**
  * Demo user ID constant - used to skip Firebase operations in demo mode
  */
-export const DEMO_USER_ID = 'demo-user-id';
+export const DEMO_USER_ID = 'Re2y49L9aJPvfwUPD5oAiwxmvvU2';
 
 /**
  * Check if we're running in demo mode
@@ -19,15 +27,37 @@ export const isDemoMode = (userId: string | null): boolean => {
 };
 
 /**
- * Firebase app instance - initialized automatically by @react-native-firebase
- * Configuration comes from google-services.json (Android) / GoogleService-Info.plist (iOS)
+ * Initialize Firebase app (singleton pattern)
  */
-export const firebaseApp = firebase;
+let _app: FirebaseApp | undefined;
+let _auth: Auth | undefined;
+
+const getFirebaseApp = (): FirebaseApp => {
+  if (!_app) {
+    if (getApps().length === 0) {
+      _app = initializeApp(firebaseConfig);
+      console.log('[Firebase] App initialized');
+    } else {
+      _app = getApps()[0];
+    }
+  }
+  return _app;
+};
+
+/**
+ * Firebase app instance
+ */
+export const firebaseApp = getFirebaseApp();
 
 /**
  * Firebase Auth instance
  */
-export const firebaseAuth = auth;
+export const firebaseAuth = (): Auth => {
+  if (!_auth) {
+    _auth = getAuth(firebaseApp);
+  }
+  return _auth;
+};
 
 /**
  * Get current authenticated user
@@ -47,8 +77,7 @@ export const getCurrentUserId = (): string | null => {
  */
 export const isFirebaseConfigured = (): boolean => {
   try {
-    const { apps } = firebase;
-    return apps && apps.length > 0;
+    return getApps().length > 0;
   } catch (error) {
     return false;
   }

@@ -3,12 +3,14 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../../contexts/AuthContext';
 
 // Must match UserContext storage key
 const PROFILE_KEY = '@cheffy_user_profile';
 
 export default function EndStep() {
   const router = useRouter();
+  const { completeOnboarding } = useAuth();
   const [profile, setProfile] = useState<{ name: string; prefs: string; allergies: string; level: string } | null>(null);
 
   useEffect(() => {
@@ -43,8 +45,12 @@ export default function EndStep() {
         // Also keep legacy format for backwards compatibility
         await AsyncStorage.setItem('profile', JSON.stringify(final));
         await AsyncStorage.multiRemove(['onboard_name','onboard_prefs','onboard_allergies','onboard_level']);
+        
+        // Mark onboarding as complete in AuthContext - this syncs to Firestore
+        await completeOnboarding();
       } catch (e) {
         // ignore save errors here
+        console.error('Error saving profile:', e);
       }
 
       // brief idle so user sees finalizing screen, then go home
@@ -59,7 +65,7 @@ export default function EndStep() {
         clearTimeout(t);
       };
     })();
-  }, []);
+  }, [completeOnboarding]);
 
   return (
     <SafeAreaView style={styles.root}>

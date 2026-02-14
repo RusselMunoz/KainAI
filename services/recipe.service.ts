@@ -288,6 +288,99 @@ class RecipeService {
       throw new Error(error.response?.data?.error || error.message || 'Failed to delete recipe');
     }
   }
+
+  /**
+   * Share a recipe to the community
+   * Makes the recipe public and creates a community post
+   * Awards +15 reward points for sharing
+   */
+  async shareRecipeToCommunity(recipeId: string, userId: string): Promise<{ success: boolean; error?: string; pointsAwarded?: number }> {
+    try {
+      const response = await axios.post(`${API_BASE}/api/recipes/${userId}/${recipeId}/share`, {
+        userId,
+      });
+
+      if (response.data.ok) {
+        // Update local cache to reflect public status
+        const cached = await this.getCachedRecipes(userId);
+        const updated = cached.map(r => 
+          r.id === recipeId 
+            ? { ...r, isPublic: true, sharedAt: new Date() }
+            : r
+        );
+        await this.cacheRecipes(userId, updated);
+
+        console.log(`📤 Recipe shared to community: ${recipeId}`);
+        return { 
+          success: true, 
+          pointsAwarded: response.data.pointsAwarded || 15 
+        };
+      }
+
+      throw new Error(response.data.error || 'Failed to share recipe');
+    } catch (error: any) {
+      console.error('Error sharing recipe:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.message || 'Failed to share recipe' 
+      };
+    }
+  }
+
+  /**
+   * Unshare a recipe from the community
+   * Makes the recipe private again
+   * Note: Does NOT remove reward points that were already awarded
+   */
+  async unshareRecipe(recipeId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await axios.post(`${API_BASE}/api/recipes/${userId}/${recipeId}/unshare`, {
+        userId,
+      });
+
+      if (response.data.ok) {
+        // Update local cache to reflect private status
+        const cached = await this.getCachedRecipes(userId);
+        const updated = cached.map(r => 
+          r.id === recipeId 
+            ? { ...r, isPublic: false }
+            : r
+        );
+        await this.cacheRecipes(userId, updated);
+
+        console.log(`🔒 Recipe made private: ${recipeId}`);
+        return { success: true };
+      }
+
+      throw new Error(response.data.error || 'Failed to unshare recipe');
+    } catch (error: any) {
+      console.error('Error unsharing recipe:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.message || 'Failed to unshare recipe' 
+      };
+    }
+  }
+
+  /**
+   * Get all public recipes (for community feed)
+   */
+  async getPublicRecipes(limit: number = 20): Promise<Recipe[]> {
+    try {
+      const response = await axios.get(`${API_BASE}/api/recipes/public`, {
+        params: { limit },
+      });
+
+      if (response.data.ok) {
+        return response.data.recipes;
+      }
+
+      throw new Error(response.data.error || 'Failed to fetch public recipes');
+    } catch (error: any) {
+      console.error('Error fetching public recipes:', error);
+      return [];
+    }
+  }
 }
 
 export const recipeService = new RecipeService();

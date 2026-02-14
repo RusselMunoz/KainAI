@@ -3,7 +3,7 @@ console.log('GROQ_API_KEY:', process.env.GROQ_API_KEY); // ADD THIS
 console.log('All env vars:', Object.keys(process.env).filter(k => k.includes('GROQ')));
 
 // ==================== DEMO MODE CONFIG ====================
-const DEMO_MODE = true; // Set to false to use real Firebase auth
+const DEMO_MODE = false; // Set to false to use real Firebase auth
 const MOCK_USER = {
   id: 'demo-user-id',
   username: 'Demo User',
@@ -578,6 +578,47 @@ app.delete('/api/recipes/:userId/:recipeId', async (req, res) => {
     return res.json({ ok: true, ...result });
   } catch (err) {
     console.error('Error deleting recipe:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+// Share recipe to community - makes it public and awards points
+app.post('/api/recipes/:userId/:recipeId/share', async (req, res) => {
+  try {
+    const { userId, recipeId } = req.params;
+    
+    // Verify ownership and share recipe
+    const result = await recipeService.shareRecipeToCommunity(userId, recipeId);
+    return res.json({ ok: true, pointsAwarded: 15, ...result });
+  } catch (err) {
+    console.error('Error sharing recipe:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+// Unshare recipe from community - makes it private
+app.post('/api/recipes/:userId/:recipeId/unshare', async (req, res) => {
+  try {
+    const { userId, recipeId } = req.params;
+    
+    // Verify ownership and unshare recipe
+    const result = await recipeService.unshareRecipe(userId, recipeId);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Error unsharing recipe:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+// Get all public recipes
+app.get('/api/recipes/public', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    
+    const recipes = await recipeService.getPublicRecipes(parseInt(limit) || 20);
+    return res.json({ ok: true, recipes });
+  } catch (err) {
+    console.error('Error fetching public recipes:', err);
     return res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });

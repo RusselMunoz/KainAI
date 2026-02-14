@@ -83,6 +83,7 @@ const DEMO_POSTS = [
     savedBy: [],
     isTrending: true,
     isFeatured: true,
+    isPublic: true,
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
     updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
   },
@@ -106,6 +107,7 @@ const DEMO_POSTS = [
     savedBy: [],
     isTrending: true,
     isFeatured: false,
+    isPublic: true,
     createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5 hours ago
     updatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
   },
@@ -130,6 +132,7 @@ const DEMO_POSTS = [
     savedBy: [],
     isTrending: false,
     isFeatured: false,
+    isPublic: true,
     createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
     updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
   },
@@ -153,6 +156,7 @@ const DEMO_POSTS = [
     savedBy: [],
     isTrending: false,
     isFeatured: false,
+    isPublic: true,
     createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
     updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
   },
@@ -168,6 +172,9 @@ async function getFeedPosts(options = {}) {
   try {
     // Build query - put where BEFORE orderBy to avoid index issues
     let query = db.collection('community_posts');
+    
+    // Only show public posts
+    query = query.where('isPublic', '==', true);
     
     if (type && type !== 'all') {
       query = query.where('type', '==', type);

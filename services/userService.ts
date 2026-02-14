@@ -134,6 +134,43 @@ class UserService {
   }
 
   /**
+   * Ensure user exists in database (create if not exists)
+   * Called after successful authentication to sync user data
+   */
+  async ensureUserExists(userData: { uid: string; email: string; displayName: string; photoURL: string | null }): Promise<void> {
+    try {
+      // Try to get existing user
+      const existingUser = await this.getUser(userData.uid);
+      
+      if (existingUser) {
+        // User exists, update any changed fields
+        const updates: Partial<User> = {};
+        if (userData.displayName && userData.displayName !== existingUser.displayName) {
+          updates.displayName = userData.displayName;
+        }
+        if (userData.photoURL && userData.photoURL !== existingUser.photoURL) {
+          updates.photoURL = userData.photoURL;
+        }
+        
+        if (Object.keys(updates).length > 0) {
+          await this.updateUser(userData.uid, updates);
+        }
+        return;
+      }
+      
+      // User doesn't exist, create new user
+      await this.createUser(userData.uid, {
+        email: userData.email,
+        displayName: userData.displayName,
+        photoURL: userData.photoURL,
+      });
+    } catch (error) {
+      console.error('❌ Error ensuring user exists:', error);
+      // Don't throw - this is a non-blocking operation
+    }
+  }
+
+  /**
    * Get user data from Firestore
    */
   async getUser(userId: string): Promise<User | null> {

@@ -18,8 +18,18 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
-# Metro
+# Metro bundler cache
 .metro-health-check*
+.metro/
+metro-cache/
+node_modules/.cache/
+
+# Haste map cache
+haste-map-*
+
+# Temporary files
+*.tmp
+*.temp
 
 # debug
 npm-debug.*
@@ -42,3 +52,12 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Build outputs
+build/
+android/build/
+android/app/build/
+
+# Gradle cache (Android)
+.gradle/
+android/.gradle/

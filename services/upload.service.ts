@@ -2,7 +2,12 @@
 // Client-side image upload service with Cloudinary URL generation
 
 import axios from 'axios';
-import * as ImagePicker from 'expo-image-picker';
+import {
+  requestMediaLibraryPermissionsAsync,
+  requestCameraPermissionsAsync,
+  launchImageLibraryAsync,
+  launchCameraAsync,
+} from 'expo-image-picker';
 import { Platform } from 'react-native';
 import { Cloudinary } from '@cloudinary/url-gen';
 import { auto } from '@cloudinary/url-gen/actions/resize';
@@ -51,7 +56,7 @@ export function getThumbnailUrl(publicId: string, size = 150): string {
  * Request permission to access the photo library
  */
 export async function requestMediaLibraryPermission(): Promise<boolean> {
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const { status } = await requestMediaLibraryPermissionsAsync();
   return status === 'granted';
 }
 
@@ -59,7 +64,7 @@ export async function requestMediaLibraryPermission(): Promise<boolean> {
  * Request permission to access the camera
  */
 export async function requestCameraPermission(): Promise<boolean> {
-  const { status } = await ImagePicker.requestCameraPermissionsAsync();
+  const { status } = await requestCameraPermissionsAsync();
   return status === 'granted';
 }
 
@@ -73,7 +78,7 @@ export async function pickImage(): Promise<string | null> {
     return null;
   }
 
-  const result = await ImagePicker.launchImageLibraryAsync({
+  const result = await launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsEditing: true,
     aspect: [4, 3],
@@ -102,7 +107,7 @@ export async function takePhoto(): Promise<string | null> {
     return null;
   }
 
-  const result = await ImagePicker.launchCameraAsync({
+  const result = await launchCameraAsync({
     allowsEditing: true,
     aspect: [4, 3],
     quality: 0.8,

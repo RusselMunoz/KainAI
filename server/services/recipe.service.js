@@ -655,6 +655,214 @@ async function deleteRecipe(userId, recipeId) {
   return { success: true };
 }
 
+/**
+ * Share a recipe to the community
+ * Makes the recipe public, creates a community post, and awards points
+ */
+async function shareRecipeToCommunity(userId, recipeId) {
+  if (!userId || !recipeId) throw new Error('User ID and Recipe ID are required');
+  
+  // Use in-memory storage for demo users
+  if (isDemoUser(userId)) {
+    const recipes = demoRecipeStore.get(userId) || [];
+    const recipe = recipes.find(r => r.id === recipeId);
+    
+    if (!recipe) {
+      throw new Error('Recipe not found');
+    }
+    
+    if (recipe.isPublic) {
+      throw new Error('Recipe is already shared to the community');
+    }
+    
+    recipe.isPublic = true;
+    recipe.sharedAt = new Date();
+    recipe.shareCount = (recipe.shareCount || 0) + 1;
+    recipe.updatedAt = new Date();
+    
+    console.log(`📤 Demo recipe shared to community: ${recipeId}`);
+    return { success: true, pointsAwarded: 15 };
+  }
+  
+  // For real users, update in Firestore
+  const recipeRef = db.collection('users').doc(userId).collection('recipes').doc(recipeId);
+  const doc = await recipeRef.get();
+  
+  if (!doc.exists) {
+    throw new Error('Recipe not found');
+  }
+  
+  const recipe = doc.data();
+  
+  if (recipe.isPublic) {
+    throw new Error('Recipe is already shared to the community');
+  }
+  
+  // Verify ownership
+  if (recipe.userId !== userId) {
+    throw new Error('You can only share your own recipes');
+  }
+  
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  
+  // Update recipe to be public
+  await recipeRef.update({
+    isPublic: true,
+    sharedAt: now,
+    shareCount: admin.firestore.FieldValue.increment(1),
+    updatedAt: now
+  });
+  
+  // Award reward points (+15 for sharing)
+  const userRef = db.collection('users').doc(userId);
+  await userRef.update({
+    rewardPoints: admin.firestore.FieldValue.increment(15),
+    recipesShared: admin.firestore.FieldValue.increment(1),
+    updated_at: now
+  });
+  
+  // Create a community post for this shared recipe
+  const communityPostRef = db.collection('community_posts').doc();
+  await communityPostRef.set({
+    id: communityPostRef.id,
+    authorId: userId,
+    type: 'recipe',
+    title: recipe.title,
+    content: recipe.description || `Check out my recipe: ${recipe.title}!`,
+    recipeId: recipeId,
+    recipeTitle: recipe.title,
+    recipeThumbnail: null,
+    images: [],
+    tags: recipe.tags || [],
+    rating: recipe.userRating || 0,
+    likesCount: 0,
+    commentsCount: 0,
+    savesCount: 0,
+    likedBy: [],
+    savedBy: [],
+    isTrending: false,
+    isFeatured: false,
+    isPublic: true,
+    createdAt: now,
+    updatedAt: now
+  });
+  
+  console.log(`📤 Recipe shared to community: ${recipeId}`);
+  return { success: true, pointsAwarded: 15, communityPostId: communityPostRef.id };
+}
+
+/**
+ * Unshare a recipe from the community
+ * Makes the recipe private again
+ */
+async function unshareRecipe(userId, recipeId) {
+  if (!userId || !recipeId) throw new Error('User ID and Recipe ID are required');
+  
+  // Use in-memory storage for demo users
+  if (isDemoUser(userId)) {
+    const recipes = demoRecipeStore.get(userId) || [];
+    const recipe = recipes.find(r => r.id === recipeId);
+    
+    if (!recipe) {
+      throw new Error('Recipe not found');
+    }
+    
+    if (!recipe.isPublic) {
+      throw new Error('Recipe is already private');
+    }
+    
+    recipe.isPublic = false;
+    recipe.updatedAt = new Date();
+    
+    console.log(`🔒 Demo recipe made private: ${recipeId}`);
+    return { success: true };
+  }
+  
+  // For real users, update in Firestore
+  const recipeRef = db.collection('users').doc(userId).collection('recipes').doc(recipeId);
+  const doc = await recipeRef.get();
+  
+  if (!doc.exists) {
+    throw new Error('Recipe not found');
+  }
+  
+  const recipe = doc.data();
+  
+  if (!recipe.isPublic) {
+    throw new Error('Recipe is already private');
+  }
+  
+  // Verify ownership
+  if (recipe.userId !== userId) {
+    throw new Error('You can only unshare your own recipes');
+  }
+  
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  
+  // Update recipe to be private
+  await recipeRef.update({
+    isPublic: false,
+    updatedAt: now
+  });
+  
+  // Find and delete the associated community post
+  const communityPostsQuery = db.collection('community_posts')
+    .where('recipeId', '==', recipeId)
+    .where('authorId', '==', userId)
+    .limit(1);
+  
+  const snapshot = await communityPostsQuery.get();
+  if (!snapshot.empty) {
+    await snapshot.docs[0].ref.delete();
+  }
+  
+  console.log(`🔒 Recipe made private: ${recipeId}`);
+  return { success: true };
+}
+
+/**
+ * Get all public recipes from all users
+ */
+async function getPublicRecipes(limit = 20) {
+  const publicRecipes = [];
+  
+  // For demo mode, check all demo recipes
+  for (const [userId, recipes] of demoRecipeStore) {
+    const userPublicRecipes = recipes.filter(r => r.isPublic);
+    publicRecipes.push(...userPublicRecipes);
+  }
+  
+  // Query Firestore for public recipes using collection group query
+  try {
+    const snapshot = await db.collectionGroup('recipes')
+      .where('isPublic', '==', true)
+      .orderBy('sharedAt', 'desc')
+      .limit(limit)
+      .get();
+    
+    snapshot.forEach(doc => {
+      publicRecipes.push({ id: doc.id, ...doc.data() });
+    });
+  } catch (err) {
+    console.warn('Error querying public recipes (index may need to be created):', err.message);
+    // Fall back to simpler query without ordering
+    try {
+      const snapshot = await db.collectionGroup('recipes')
+        .where('isPublic', '==', true)
+        .limit(limit)
+        .get();
+      
+      snapshot.forEach(doc => {
+        publicRecipes.push({ id: doc.id, ...doc.data() });
+      });
+    } catch (fallbackErr) {
+      console.warn('Fallback query also failed:', fallbackErr.message);
+    }
+  }
+  
+  return publicRecipes.slice(0, limit);
+}
+
 module.exports = {
   parseAIRecipeResponse,
   saveRecipe,
@@ -664,5 +872,8 @@ module.exports = {
   completeRecipe,
   deleteRecipe,
   copyRecipeToArchive,
-  calculateLevel
+  calculateLevel,
+  shareRecipeToCommunity,
+  unshareRecipe,
+  getPublicRecipes
 };

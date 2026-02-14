@@ -13,18 +13,32 @@ config.transformer = {
     transform: {
       experimentalImportSupport: false,
       inlineRequires: true,
+      // Enable non-dev mode optimizations even during dev
+      nonInlinedRequires: [
+        'React',
+        'react',
+        'react-native',
+      ],
     },
   }),
-  // Enable minification only in production
+  // Minifier configuration for production builds
+  minifierPath: 'metro-minify-terser',
   minifierConfig: {
     keep_classnames: false,
     keep_fnames: false,
-    mangle: true,
-    reserved: [],
-    sourceMap: {
-      includeSources: false,
+    mangle: {
+      toplevel: true,
+    },
+    compress: {
+      drop_console: process.env.NODE_ENV === 'production',
+      passes: 2,
+    },
+    output: {
+      comments: false,
     },
   },
+  // Async requires for code splitting
+  asyncRequireModulePath: require.resolve('metro-runtime/src/modules/asyncRequire'),
 };
 
 // Improve resolver performance
@@ -34,6 +48,8 @@ config.resolver = {
   platforms: ['android', 'ios'],
   // Cache symlinks resolution
   unstable_enableSymlinks: true,
+  // Prioritize resolver main fields for faster resolution
+  resolverMainFields: ['react-native', 'browser', 'main'],
   // Replace heavy optional dependencies with lightweight stubs
   extraNodeModules: {
     ...(config.resolver?.extraNodeModules || {}),
@@ -42,9 +58,22 @@ config.resolver = {
       'stubs/react-native-zoom-reanimated'
     ),
   },
+  // Block known large unused modules from being included
+  blockList: [
+    // Block any test files from the bundle
+    /.*\/__tests__\/.*/,
+    /.*\.test\.[jt]sx?$/,
+    /.*\.spec\.[jt]sx?$/,
+  ],
 };
 
 // Enable caching for faster subsequent builds
 config.cacheStores = config.cacheStores || [];
+
+// Increase max workers for parallel processing
+config.maxWorkers = process.env.CI ? 2 : Math.max(2, require('os').cpus().length - 1);
+
+// Reset cache on significant changes
+config.resetCache = process.env.METRO_RESET_CACHE === 'true';
 
 module.exports = config;

@@ -23,6 +23,7 @@ export interface User {
   created_at: Date;
   updated_at: Date;
   is_active: boolean;
+  onboardingComplete?: boolean;
 }
 
 // ==================== RECIPE TYPES ====================
@@ -85,6 +86,7 @@ export interface Recipe {
   originalAuthorId: string | null;
   isPublic: boolean;
   shareCount: number;
+  sharedAt: Date | null; // When recipe was shared to community
   createdAt: Date;
   updatedAt: Date;
   lastCookedAt: Date | null;

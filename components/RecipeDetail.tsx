@@ -10,6 +10,7 @@ import {
   Pressable,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
@@ -25,6 +26,7 @@ interface RecipeDetailProps {
   onClose: () => void;
   onRecipeComplete: (recipe: Recipe, rating: number) => void;
   onSaveToArchive?: (recipe: Recipe) => void;
+  onRecipeShared?: (recipe: Recipe) => void;
 }
 
 export function RecipeDetail({
@@ -33,6 +35,7 @@ export function RecipeDetail({
   onClose,
   onRecipeComplete,
   onSaveToArchive,
+  onRecipeShared,
 }: RecipeDetailProps) {
   const [recipe, setRecipe] = useState(initialRecipe);
   const [cookingMode, setCookingMode] = useState(false);
@@ -44,6 +47,88 @@ export function RecipeDetail({
   });
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
+  const [isSharing, setIsSharing] = useState(false);
+
+  // Check if user owns this recipe
+  const isOwner = recipe.userId === userId;
+  const canShare = isOwner && !recipe.isPublic;
+  const canUnshare = isOwner && recipe.isPublic;
+
+  // Handle sharing recipe to community
+  const handleShareToCommunity = async () => {
+    if (!canShare) return;
+
+    Alert.alert(
+      'Share to Community',
+      'Share this recipe with the KainAI community? You\'ll earn 15 reward points!',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Share',
+          onPress: async () => {
+            try {
+              setIsSharing(true);
+              const result = await recipeService.shareRecipeToCommunity(recipe.id, userId);
+              
+              if (result.success) {
+                // Update local state
+                setRecipe(prev => ({ ...prev, isPublic: true, sharedAt: new Date() }));
+                
+                Alert.alert(
+                  'Shared!',
+                  `Your recipe is now visible to the community. You earned ${result.pointsAwarded} reward points!`
+                );
+
+                // Notify parent
+                onRecipeShared?.(recipe);
+              } else {
+                Alert.alert('Error', result.error || 'Failed to share recipe');
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to share recipe');
+            } finally {
+              setIsSharing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle making recipe private again
+  const handleMakePrivate = async () => {
+    if (!canUnshare) return;
+
+    Alert.alert(
+      'Make Private',
+      'Remove this recipe from the community? Others will no longer be able to see it.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Make Private',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsSharing(true);
+              const result = await recipeService.unshareRecipe(recipe.id, userId);
+              
+              if (result.success) {
+                // Update local state
+                setRecipe(prev => ({ ...prev, isPublic: false }));
+                Alert.alert('Done', 'Your recipe is now private.');
+              } else {
+                Alert.alert('Error', result.error || 'Failed to make recipe private');
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to make recipe private');
+            } finally {
+              setIsSharing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Reset state when recipe changes (fixes shared state bug)
   useEffect(() => {
@@ -218,9 +303,24 @@ export function RecipeDetail({
               <Feather name="bookmark" size={22} color="#ff8a3d" />
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.shareBtn}>
-            <Feather name="share" size={22} color="#2bb673" />
-          </TouchableOpacity>
+          {/* Share to Community Button */}
+          {isSharing ? (
+            <View style={styles.shareBtn}>
+              <ActivityIndicator size="small" color="#2bb673" />
+            </View>
+          ) : canShare ? (
+            <TouchableOpacity style={styles.shareBtn} onPress={handleShareToCommunity}>
+              <Feather name="share" size={22} color="#2bb673" />
+            </TouchableOpacity>
+          ) : canUnshare ? (
+            <TouchableOpacity style={styles.shareBtn} onPress={handleMakePrivate}>
+              <Feather name="lock" size={22} color="#f59e0b" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.shareBtn} disabled>
+              <Feather name="share" size={22} color="#ccc" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -247,6 +347,26 @@ export function RecipeDetail({
             ]}>
               <Text style={styles.statusText}>
                 {recipe.status === 'Done' ? '✓ Completed' : '🍳 In Progress'}
+              </Text>
+            </View>
+          )}
+
+          {/* Public/Private Status Badge */}
+          {isOwner && (
+            <View style={[
+              styles.statusBadge,
+              recipe.isPublic ? styles.statusPublic : styles.statusPrivate
+            ]}>
+              <Feather 
+                name={recipe.isPublic ? 'globe' : 'lock'} 
+                size={12} 
+                color={recipe.isPublic ? '#22c55e' : '#6b7280'} 
+              />
+              <Text style={[
+                styles.statusText,
+                { color: recipe.isPublic ? '#22c55e' : '#6b7280', marginLeft: 4 }
+              ]}>
+                {recipe.isPublic ? 'Public' : 'Private'}
               </Text>
             </View>
           )}
@@ -913,6 +1033,29 @@ const styles = StyleSheet.create({
   modalCancelText: {
     color: '#666',
     fontSize: 14,
+  },
+  // Recipe sharing status badge styles
+  statusPublic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  statusPrivate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 
