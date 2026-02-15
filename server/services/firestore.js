@@ -5,31 +5,62 @@ const admin = require('firebase-admin');
 function extractEmailFromMetadata(userData) {
   if (!userData) return null;
 
-  const candidates = [];
-  const pushCandidate = (value) => {
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const prioritized = [];
+  const fallback = [];
+  const seen = new Set();
+
+  const pushCandidate = (value, target) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+    const trimmed = value.trim();
+    if (!trimmed || !EMAIL_REGEX.test(trimmed)) {
+      return;
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    target.push(trimmed);
+  };
+
+  const visit = (value, depth = 0) => {
+    if (value == null || depth > 5) {
+      return;
+    }
     if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed) {
-        candidates.push(trimmed);
-      }
+      pushCandidate(value, fallback);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    if (typeof value === 'object') {
+      Object.values(value).forEach((val) => visit(val, depth + 1));
     }
   };
 
   if (typeof userData === 'string') {
-    pushCandidate(userData);
+    pushCandidate(userData, prioritized);
   } else if (typeof userData === 'object') {
-    pushCandidate(userData.email);
-    pushCandidate(userData.emailAddress);
-    pushCandidate(userData.user?.email);
-    pushCandidate(userData.user?.emailAddress);
-    pushCandidate(userData.profile?.email);
-    pushCandidate(userData.metadata?.email);
-    pushCandidate(userData.auth?.email);
-    pushCandidate(userData.auth?.token?.email);
-    pushCandidate(userData.auth?.token?.emailAddress);
+    pushCandidate(userData.email, prioritized);
+    pushCandidate(userData.emailAddress, prioritized);
+    pushCandidate(userData.user?.email, prioritized);
+    pushCandidate(userData.user?.emailAddress, prioritized);
+    pushCandidate(userData.profile?.email, prioritized);
+    pushCandidate(userData.metadata?.email, prioritized);
+    pushCandidate(userData.metadata?.user?.email, prioritized);
+    pushCandidate(userData.metadata?.profile?.email, prioritized);
+    pushCandidate(userData.auth?.email, prioritized);
+    pushCandidate(userData.auth?.token?.email, prioritized);
+    pushCandidate(userData.auth?.token?.emailAddress, prioritized);
+    visit(userData);
   }
 
-  return candidates[0] || null;
+  return prioritized[0] || fallback[0] || null;
 }
 
 function sanitizeForFirestore(data) {
@@ -44,6 +75,12 @@ async function ensureUserExists(userId, userData = {}) {
   }
 
   const uid = userId.trim();
+  const metadataPayload = (userData && typeof userData === 'object') ? userData : { raw: userData };
+  try {
+    console.log('[ensureUserExists] Received metadata:', JSON.stringify(metadataPayload, null, 2));
+  } catch (error) {
+    console.log('[ensureUserExists] Unable to stringify metadata payload:', error.message);
+  }
   const userRef = admin.firestore().collection('users').doc(uid);
   const userDoc = await userRef.get();
 
@@ -51,7 +88,7 @@ async function ensureUserExists(userId, userData = {}) {
     return userDoc.data();
   }
 
-  const normalizedMetadata = (userData && typeof userData === 'object') ? userData : {};
+  const normalizedMetadata = (metadataPayload && typeof metadataPayload === 'object') ? { ...metadataPayload } : {};
 
   const {
     dietary_preferences,
@@ -72,10 +109,14 @@ async function ensureUserExists(userId, userData = {}) {
     ? nestedMetadata.email.trim()
     : null;
 
+  const extractedEmail = extractEmailFromMetadata(metadataPayload);
+
   const resolvedEmail =
     (typeof email === 'string' && email.trim())
       ? email.trim()
-      : (metadataEmail || extractEmailFromMetadata({ ...normalizedMetadata, metadata: nestedMetadata }));
+      : (metadataEmail || extractedEmail);
+
+  console.log('[ensureUserExists] Extracted email:', resolvedEmail || 'NOT FOUND');
 
   const resolvedDisplayName = displayName
     || name

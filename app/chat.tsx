@@ -7,6 +7,7 @@ import { validateIngredient } from '../services/profanity-filter.service';
 import recipeService from '../services/recipe.service';
 import userStatsService from '../services/user-stats.service';
 import { useAuth } from '../contexts/AuthContext';
+import { useUser } from '../contexts/UserContext';
 import type { Recipe } from '../types';
 
 // Get screen width for button sizing - match chat bubble width
@@ -65,8 +66,10 @@ interface ExtendedMessage extends IMessage {
 export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   // Get user from auth context for personalized greetings (matches header greeting)
   const { user } = useAuth();
-  const userName = user?.displayName 
-    ? user.displayName.split(' ')[0] 
+  const { profile } = useUser();
+  const resolvedDisplayName = profile.displayName?.trim() || user?.displayName || '';
+  const userName = resolvedDisplayName
+    ? resolvedDisplayName.split(' ')[0]
     : 'Chef';
   const activeUserId = user?.uid ?? null;
 

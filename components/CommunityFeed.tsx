@@ -1,5 +1,5 @@
 // components/CommunityFeed.tsx - Community social feed component
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import type { CommunityPost, PostType, CommunityStats, Recipe, Comment } from '.
 import communityService from '../services/community.service';
 import recipeService from '../services/recipe.service';
 import uploadService from '../services/upload.service';
+import userService from '../services/userService';
 import Avatar from './Avatar';
 
 const screenW = Dimensions.get('window').width;
@@ -245,7 +246,16 @@ interface PostCardProps {
   onPostUpdated?: (updatedPost: CommunityPost) => void;
 }
 
+interface AuthorStatsState {
+  recipes: number | null;
+  posts: number | null;
+  xp: number | null;
+}
+
 function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe, onPostDeleted, onPostUpdated }: PostCardProps) {
+  const [authorStats, setAuthorStats] = useState<AuthorStatsState>({ recipes: null, posts: null, xp: null });
+  const [authorStatsLoading, setAuthorStatsLoading] = useState(false);
+  const authorStatsLoadedRef = useRef(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
@@ -268,7 +278,59 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
     question: '#f59e0b',
   };
 
+  useEffect(() => {
+    authorStatsLoadedRef.current = false;
+    setAuthorStats({ recipes: null, posts: null, xp: null });
+  }, [post.authorId]);
+
   const relativeTime = communityService.formatRelativeTime(post.createdAt);
+
+  const fetchAuthorStats = useCallback(async () => {
+    if (!post.authorId) {
+      return;
+    }
+    if (authorStatsLoadedRef.current) {
+      return;
+    }
+    setAuthorStatsLoading(true);
+    try {
+      const [recipes, posts, profile] = await Promise.all([
+        recipeService.getUserRecipes(post.authorId),
+        communityService.getUserPosts(post.authorId, 100),
+        userService.getUser(post.authorId),
+      ]);
+
+      setAuthorStats({
+        recipes: recipes.length,
+        posts: posts.length,
+        xp: profile?.xp ?? 0,
+      });
+      authorStatsLoadedRef.current = true;
+    } catch (error) {
+      console.error('[CommunityFeed] Failed to load author stats:', error);
+    } finally {
+      setAuthorStatsLoading(false);
+    }
+  }, [post.authorId]);
+
+  useEffect(() => {
+    if (showUserPopup) {
+      fetchAuthorStats();
+    }
+  }, [showUserPopup, fetchAuthorStats]);
+
+  const formatStatValue = (value: number | null): string => {
+    if (authorStatsLoading && value === null) {
+      return '...';
+    }
+    if (value == null) {
+      return '-';
+    }
+    if (value >= 1000) {
+      return `${(value / 1000).toFixed(1)}K`;
+    }
+    return value.toString();
+  };
 
   const loadComments = async () => {
     setLoadingComments(true);
@@ -638,17 +700,17 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
             
             <View style={styles.userPopupStats}>
               <View style={styles.userPopupStat}>
-                <Text style={styles.userPopupStatValue}>-</Text>
+                <Text style={styles.userPopupStatValue}>{formatStatValue(authorStats.recipes)}</Text>
                 <Text style={styles.userPopupStatLabel}>Recipes</Text>
               </View>
               <View style={styles.userPopupStatDivider} />
               <View style={styles.userPopupStat}>
-                <Text style={styles.userPopupStatValue}>-</Text>
+                <Text style={styles.userPopupStatValue}>{formatStatValue(authorStats.posts)}</Text>
                 <Text style={styles.userPopupStatLabel}>Posts</Text>
               </View>
               <View style={styles.userPopupStatDivider} />
               <View style={styles.userPopupStat}>
-                <Text style={styles.userPopupStatValue}>-</Text>
+                <Text style={styles.userPopupStatValue}>{formatStatValue(authorStats.xp)}</Text>
                 <Text style={styles.userPopupStatLabel}>XP</Text>
               </View>
             </View>

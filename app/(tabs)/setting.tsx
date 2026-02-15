@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useRouter } from 'expo-router';
 
 import {
@@ -13,11 +13,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../../contexts/UserContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Avatar from '../../components/Avatar';
 import authService from '../../services/auth.service';
 
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
+const AUTH_STORAGE_KEYS = ['@kainai_auth_state', '@cheffy_mock_user'];
 
 const SECTIONS = [
   {
@@ -59,25 +62,38 @@ const SECTIONS = [
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile } = useUser();
+  const { signOut: authSignOut } = useAuth();
 
   const onBack = () => {
     router.back();
     console.log('back pressed');
   };
 
-  const onSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
+    console.log('[Settings] Sign Out button pressed');
     try {
-      const result = await authService.signOut();
-      if (!result.success) {
-        Alert.alert('Sign Out Failed', 'Please try again.');
+      console.log('[Settings] Calling authService.signOut...');
+      const serviceResult = await authService.signOut();
+      console.log('[Settings] authService.signOut result:', serviceResult);
+
+      console.log('[Settings] Calling AuthContext.signOut...');
+      const authResult = await authSignOut();
+      console.log('[Settings] AuthContext.signOut result:', authResult);
+
+      if (!serviceResult.success || !authResult.success) {
+        Alert.alert('Sign Out Failed', serviceResult.error || authResult.error || 'Please try again.');
         return;
       }
+
+      await AsyncStorage.multiRemove(AUTH_STORAGE_KEYS);
+      console.log('[Settings] Cleared AsyncStorage keys:', AUTH_STORAGE_KEYS.join(', '));
+
       router.replace('/Login');
     } catch (error: any) {
-      console.error('Sign-out error:', error);
+      console.error('[Settings] Sign-out error:', error);
       Alert.alert('Sign Out Failed', error?.message || 'Unable to sign out right now.');
     }
-  };
+  }, [authSignOut, router]);
 
   const onPressItem = (key: string) => {
     // Navigation for Profile & Health section
@@ -183,7 +199,7 @@ export default function SettingsScreen() {
           </View>
         ))}
 
-        <Pressable style={styles.logoutButton} onPress={onSignOut}>
+        <Pressable style={styles.logoutButton} onPress={() => handleSignOut()}>
           <Text style={styles.logoutText}>Sign Out</Text>
         </Pressable>
 

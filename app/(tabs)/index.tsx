@@ -77,6 +77,7 @@ export default function Dashboard() {
   const userXP = stats.xp;
   const userLevel = stats.level;
   const rewardPoints = stats.rewardPoints;
+  const greetingName = profile.displayName?.trim() || user?.displayName || 'User';
 
   // Load recipes when switching to Recipes tab
   useEffect(() => {
@@ -193,7 +194,7 @@ export default function Dashboard() {
             size={48} 
           />
           <View style={{ marginLeft: 12 }}>
-            <Text style={styles.hello}>Hello, {user?.displayName || 'User'}!</Text>
+            <Text style={styles.hello}>Hello, {greetingName}!</Text>
             {/* XP under name - clickable to go to Awards tab */}
             <TouchableOpacity 
               style={styles.xpUnderName}
