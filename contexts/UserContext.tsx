@@ -169,19 +169,49 @@ export function UserProvider({ children }: UserProviderProps) {
     }
   }, []);
 
-  // Load profile from AsyncStorage and auth
+  // Load profile from AsyncStorage and Firestore
   const loadProfile = useCallback(async () => {
     try {
       // Get user from auth service
       const user = await authService.getCurrentGoogleUser();
       if (user) {
         setUid(user.uid);
+        console.log('[UserContext] User UID from auth:', user.uid);
       }
 
-      // Load stored profile
+      // Always try to fetch fresh data from Firestore if we have a UID
+      if (user?.uid && !isDemoMode(user.uid)) {
+        console.log('[UserContext] Fetching profile from Firestore...');
+        try {
+          const firestoreUser = await userService.getUser(user.uid);
+          if (firestoreUser && firestoreUser.displayName) {
+            console.log('[UserContext] Got displayName from Firestore:', firestoreUser.displayName);
+            const firestoreProfile: UserProfile = {
+              displayName: firestoreUser.displayName || '',
+              bio: firestoreUser.bio || '',
+              photoURL: firestoreUser.photoURL || null,
+              dietaryPreferences: firestoreUser.dietary_preferences || [],
+              allergies: firestoreUser.dietary_allergies || [],
+              cookingLevel: firestoreUser.level || 'Beginner',
+              customDietaryText: firestoreUser.dietary_custom || '',
+              customAllergyText: firestoreUser.allergy_custom || '',
+            };
+            setProfileState(firestoreProfile);
+            // Also save to AsyncStorage for offline access
+            await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(firestoreProfile));
+            console.log('[UserContext] Profile synced from Firestore, displayName:', firestoreProfile.displayName);
+            return; // Successfully loaded from Firestore
+          }
+        } catch (firestoreError) {
+          console.error('[UserContext] Failed to fetch from Firestore, falling back to local:', firestoreError);
+        }
+      }
+
+      // Fallback: Load stored profile from AsyncStorage
       const stored = await AsyncStorage.getItem(PROFILE_KEY);
       if (stored) {
         const parsedProfile = JSON.parse(stored);
+        console.log('[UserContext] Loaded profile from AsyncStorage, displayName:', parsedProfile.displayName);
         setProfileState(parsedProfile);
       } else {
         // Try to migrate from legacy onboarding format
@@ -204,17 +234,20 @@ export function UserProvider({ children }: UserProviderProps) {
               dietaryPreferences: prefsArray,
               allergies: allergiesArray,
               cookingLevel: legacy.level || 'Beginner',
+              customDietaryText: '',
+              customAllergyText: '',
             };
             
             // Save migrated profile
             await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(migratedProfile));
             setProfileState(migratedProfile);
-            console.log('Migrated legacy profile to new format');
+            console.log('[UserContext] Migrated legacy profile, displayName:', migratedProfile.displayName);
           } catch (parseError) {
-            console.error('Error migrating legacy profile:', parseError);
+            console.error('[UserContext] Error migrating legacy profile:', parseError);
           }
         } else if (user?.displayName) {
           // Initialize with auth display name if no stored profile
+          console.log('[UserContext] Using auth displayName:', user.displayName);
           setProfileState(prev => ({
             ...prev,
             displayName: user.displayName,
@@ -222,7 +255,7 @@ export function UserProvider({ children }: UserProviderProps) {
         }
       }
     } catch (error) {
-      console.error('Error loading user profile:', error);
+      console.error('[UserContext] Error loading user profile:', error);
     }
   }, []);
 

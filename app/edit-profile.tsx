@@ -313,7 +313,9 @@ export default function EditProfileScreen() {
         <View 
           style={styles.inputSection}
           onLayout={(e: LayoutChangeEvent) => {
-            setSectionPositions(prev => ({ ...prev, dietary: e.nativeEvent.layout.y }));
+            if (e?.nativeEvent?.layout) {
+              setSectionPositions(prev => ({ ...prev, dietary: e.nativeEvent.layout.y }));
+            }
           }}
         >
           <Text style={styles.label}>Dietary Preferences</Text>
@@ -363,7 +365,9 @@ export default function EditProfileScreen() {
         <View 
           style={styles.inputSection}
           onLayout={(e: LayoutChangeEvent) => {
-            setSectionPositions(prev => ({ ...prev, allergies: e.nativeEvent.layout.y }));
+            if (e?.nativeEvent?.layout) {
+              setSectionPositions(prev => ({ ...prev, allergies: e.nativeEvent.layout.y }));
+            }
           }}
         >
           <Text style={styles.label}>Allergies</Text>

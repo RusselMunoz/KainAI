@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments, Redirect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
@@ -14,43 +14,19 @@ export const unstable_settings = {
 };
 
 /**
- * Route guard component that handles authentication routing
- * - Redirects unauthenticated users to Login
- * - Redirects first-time users to onboarding
- * - Allows authenticated users to access main app
+ * Inner layout that handles auth-based routing
+ * Uses Redirect component for reliable navigation
  */
-function AuthRouteGuard({ children }: { children: React.ReactNode }) {
+function RootLayoutNav() {
+  const colorScheme = useColorScheme();
   const { user, loading, isFirstTime } = useAuth();
   const segments = useSegments();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (loading) return; // Wait for auth state to load
-
-    const inAuthGroup = segments[0] === 'Login';
-    const inOnboarding = segments[0] === '(tabs)' && segments[1] === 'introduction';
-    const inOnboardingSteps = segments.join('/').includes('onboarding');
-
-    if (!user) {
-      // User is not signed in - redirect to Login
-      if (!inAuthGroup) {
-        router.replace('/Login');
-      }
-    } else if (user && isFirstTime) {
-      // User is signed in but hasn't completed onboarding
-      if (!inOnboarding && !inOnboardingSteps) {
-        router.replace('/introduction');
-      }
-    } else if (user && !isFirstTime) {
-      // User is signed in and has completed onboarding
-      if (inAuthGroup || inOnboarding) {
-        router.replace('/(tabs)');
-      }
-    }
-  }, [user, loading, isFirstTime, segments]);
+  console.log('[Layout] Auth state:', { user: user?.uid || null, loading, isFirstTime, segments: segments.join('/') });
 
   // Show loading screen while checking auth state
   if (loading) {
+    console.log('[Layout] Showing loading screen');
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff9f2' }}>
         <ActivityIndicator size="large" color="#f59e0b" />
@@ -58,20 +34,43 @@ function AuthRouteGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
-}
+  const inAuthGroup = segments[0] === 'Login';
+  const inOnboarding = segments[0] === '(tabs)' && segments[1] === 'introduction';
+  const inOnboardingSteps = segments.join('/').includes('onboarding');
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  // User is NOT signed in
+  if (!user) {
+    console.log('[Layout] No user, inAuthGroup:', inAuthGroup);
+    if (!inAuthGroup) {
+      console.log('[Layout] Redirecting to Login');
+      return <Redirect href="/Login" />;
+    }
+  }
 
+  // User IS signed in but needs onboarding
+  if (user && isFirstTime) {
+    console.log('[Layout] User needs onboarding, inOnboarding:', inOnboarding);
+    if (!inOnboarding && !inOnboardingSteps) {
+      console.log('[Layout] Redirecting to onboarding');
+      return <Redirect href="/introduction" />;
+    }
+  }
+
+  // User IS signed in and completed onboarding - redirect away from auth/onboarding screens
+  if (user && !isFirstTime) {
+    if (inAuthGroup || inOnboarding) {
+      console.log('[Layout] User authenticated, redirecting to main app');
+      return <Redirect href="/(tabs)" />;
+    }
+  }
+
+  console.log('[Layout] Rendering Stack');
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AuthRouteGuard>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="Login" options={{ presentation: 'modal', title: 'Login', headerShown: false }} />
-        </Stack>
-      </AuthRouteGuard>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="Login" options={{ presentation: 'modal', title: 'Login', headerShown: false }} />
+      </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
   );

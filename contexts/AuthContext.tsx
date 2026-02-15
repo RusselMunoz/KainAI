@@ -13,9 +13,25 @@ import {
   User as FirebaseUser,
 } from 'firebase/auth';
 import { Platform } from 'react-native';
-import { GoogleSignin, statusCodes, isSuccessResponse } from '@react-native-google-signin/google-signin';
 import { DEMO_USER_ID, isDemoMode, firebaseAuth } from '../config/firebase';
 import userService from '../services/userService';
+
+// Google Sign-In graceful fallback - detect if native module is available
+let GoogleSignin: any = null;
+let statusCodes: any = null;
+let isSuccessResponse: any = null;
+let googleSignInAvailableGlobal = false;
+
+try {
+  const googleSignInModule = require('@react-native-google-signin/google-signin');
+  GoogleSignin = googleSignInModule.GoogleSignin;
+  statusCodes = googleSignInModule.statusCodes;
+  isSuccessResponse = googleSignInModule.isSuccessResponse;
+  googleSignInAvailableGlobal = true;
+  console.log('[Auth] Google Sign-In native module available');
+} catch (error) {
+  console.log('[Auth] Google Sign-In not available (requires native build)');
+}
 
 // Storage keys
 const AUTH_STATE_KEY = '@kainai_auth_state';
@@ -32,6 +48,10 @@ let googleSignInConfigured = false;
 
 const configureGoogleSignIn = () => {
   if (googleSignInConfigured) return;
+  if (!googleSignInAvailableGlobal || !GoogleSignin) {
+    console.log('[Auth] Skipping Google Sign-In configuration (not available)');
+    return;
+  }
   
   try {
     GoogleSignin.configure({
@@ -68,14 +88,16 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   /** Create account with email and password */
   signUp: (email: string, password: string, displayName?: string) => Promise<{ success: boolean; error?: string }>;
-  /** Sign in with Google */
-  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  /** Sign in with Google (null if not available in Expo Go) */
+  signInWithGoogle: (() => Promise<{ success: boolean; error?: string }>) | null;
   /** Sign out */
   signOut: () => Promise<{ success: boolean; error?: string }>;
   /** Mark onboarding as complete */
   completeOnboarding: () => Promise<void>;
   /** Check if email/password login is enabled */
   emailPasswordEnabled: boolean;
+  /** Whether Google Sign-In is available (requires native build) */
+  googleSignInAvailable: boolean;
 }
 
 // Create context with default values
@@ -85,10 +107,11 @@ const AuthContext = createContext<AuthContextValue>({
   isFirstTime: false,
   signIn: async () => ({ success: false, error: 'Not initialized' }),
   signUp: async () => ({ success: false, error: 'Not initialized' }),
-  signInWithGoogle: async () => ({ success: false, error: 'Not initialized' }),
+  signInWithGoogle: null,
   signOut: async () => ({ success: false, error: 'Not initialized' }),
   completeOnboarding: async () => {},
   emailPasswordEnabled: ENABLE_EMAIL_PASSWORD_LOGIN,
+  googleSignInAvailable: false,
 });
 
 // Provider props
@@ -117,12 +140,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Listen to Firebase auth state changes
   useEffect(() => {
     const auth = firebaseAuth();
+    console.log('[Auth] Setting up onAuthStateChanged listener');
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log('[Auth] Auth state changed:', firebaseUser?.uid || 'null');
+      console.log('[Auth] Firebase user details:', firebaseUser ? {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        displayName: firebaseUser.displayName,
+        emailVerified: firebaseUser.emailVerified,
+      } : 'null');
       
       if (firebaseUser) {
+        console.log('[Auth] Firebase user detected, calling handleUserSignIn for UID:', firebaseUser.uid);
         await handleUserSignIn(firebaseUser);
       } else {
+        console.log('[Auth] No Firebase user, checking stored auth state');
         // Check for demo mode / stored state
         await checkStoredAuthState();
       }
@@ -135,19 +167,75 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Handle user sign in - load or create user data
   const handleUserSignIn = async (firebaseUser: FirebaseUser) => {
+    console.log('[Auth] handleUserSignIn START for UID:', firebaseUser.uid);
+    console.log('[Auth] Firebase Auth displayName:', firebaseUser.displayName);
+    
     try {
-      // Check if onboarding is complete
-      const onboardingComplete = await checkOnboardingStatus(firebaseUser.uid);
+      let displayName = firebaseUser.displayName;
+      let photoURL = firebaseUser.photoURL;
+      let onboardingComplete = false;
+
+      console.log('[Auth] Initial displayName from Firebase Auth:', displayName);
+      console.log('[Auth] Is demo mode:', isDemoMode(firebaseUser.uid));
+
+      // Fetch user data from Firestore to get actual displayName, photoURL, and onboardingComplete
+      if (!isDemoMode(firebaseUser.uid)) {
+        console.log('[Auth] Fetching user data from Firestore...');
+        try {
+          // Ensure user document exists first (creates if new user)
+          console.log('[Auth] Calling ensureUserExists...');
+          await userService.ensureUserExists({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            displayName: firebaseUser.displayName || '',
+            photoURL: firebaseUser.photoURL || null,
+          });
+
+          // Now fetch the full user data from Firestore
+          console.log('[Auth] Calling userService.getUser for UID:', firebaseUser.uid);
+          const firestoreUser = await userService.getUser(firebaseUser.uid);
+          console.log('[Auth] User data from Firestore:', firestoreUser ? JSON.stringify({
+            displayName: firestoreUser.displayName,
+            email: firestoreUser.email,
+            onboardingComplete: firestoreUser.onboardingComplete,
+          }) : 'null');
+          
+          if (firestoreUser) {
+            console.log('[Auth] Loaded user data from Firestore, displayName:', firestoreUser.displayName);
+            displayName = firestoreUser.displayName || displayName;
+            photoURL = firestoreUser.photoURL || photoURL;
+            onboardingComplete = firestoreUser.onboardingComplete || false;
+            console.log('[Auth] After Firestore merge - displayName:', displayName, 'onboardingComplete:', onboardingComplete);
+            
+            // Cache onboarding status locally
+            if (onboardingComplete) {
+              await AsyncStorage.setItem(`${ONBOARDING_KEY}_${firebaseUser.uid}`, 'true');
+            }
+          } else {
+            console.log('[Auth] WARNING: No user data returned from Firestore!');
+          }
+        } catch (error) {
+          console.error('[Auth] ERROR: Failed to fetch user from Firestore:', error);
+          // Fallback to checking onboarding status separately
+          onboardingComplete = await checkOnboardingStatus(firebaseUser.uid);
+        }
+      } else {
+        // Demo mode - check onboarding status from local storage
+        onboardingComplete = await checkOnboardingStatus(firebaseUser.uid);
+      }
       
       const authUser: AuthUser = {
         uid: firebaseUser.uid,
         email: firebaseUser.email,
-        displayName: firebaseUser.displayName,
-        photoURL: firebaseUser.photoURL,
+        displayName: displayName,
+        photoURL: photoURL,
         isAnonymous: firebaseUser.isAnonymous,
         onboardingComplete,
       };
 
+      console.log('[Auth] Setting user state with displayName:', authUser.displayName);
+      console.log('[Auth] Full authUser object:', JSON.stringify(authUser));
+      console.log('[Auth] User signed in:', authUser.displayName, 'onboardingComplete:', onboardingComplete);
       setUser(authUser);
       setIsFirstTime(!onboardingComplete);
 
@@ -158,23 +246,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         displayName: authUser.displayName,
         photoURL: authUser.photoURL,
       }));
-
-      // Ensure user document exists in Firestore (via backend API)
-      if (!isDemoMode(firebaseUser.uid)) {
-        try {
-          await userService.ensureUserExists({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || '',
-            photoURL: firebaseUser.photoURL || null,
-          });
-        } catch (error) {
-          console.warn('[Auth] Failed to sync user to backend (non-blocking):', error);
-        }
-      }
     } catch (error) {
-      console.error('[Auth] Error handling sign in:', error);
+      console.error('[Auth] ERROR in handleUserSignIn:', error);
+      console.error('[Auth] Error details:', error instanceof Error ? error.message : String(error));
     }
+    console.log('[Auth] handleUserSignIn END');
   };
 
   // Check onboarding status from storage/Firestore
@@ -206,22 +282,63 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const checkStoredAuthState = async () => {
     try {
       const stored = await AsyncStorage.getItem(AUTH_STATE_KEY);
+      console.log('[Auth] Checking stored auth state:', stored ? 'found' : 'not found');
+      
       if (stored) {
         const parsed = JSON.parse(stored);
-        // Only restore demo users when Firebase is not available
-        if (parsed.uid && isDemoMode(parsed.uid)) {
-          const onboardingComplete = await checkOnboardingStatus(parsed.uid);
-          setUser({
-            ...parsed,
-            isAnonymous: false,
-            onboardingComplete,
-          });
-          setIsFirstTime(!onboardingComplete);
+        console.log('[Auth] Parsed stored auth:', JSON.stringify(parsed));
+        
+        // Restore user from stored state (demo mode or cached real user)
+        if (parsed.uid) {
+          console.log('[Auth] Found stored UID:', parsed.uid, 'isDemoMode:', isDemoMode(parsed.uid));
+          
+          // Fetch fresh user data from Firestore to get displayName
+          console.log('[Auth] Fetching user data from Firestore for stored UID...');
+          try {
+            const firestoreUser = await userService.getUser(parsed.uid);
+            console.log('[Auth] Firestore user data:', firestoreUser ? JSON.stringify({
+              displayName: firestoreUser.displayName,
+              email: firestoreUser.email,
+              onboardingComplete: firestoreUser.onboardingComplete,
+            }) : 'null');
+            
+            if (firestoreUser) {
+              const authUser: AuthUser = {
+                uid: parsed.uid,
+                email: firestoreUser.email || parsed.email,
+                displayName: firestoreUser.displayName || parsed.displayName,
+                photoURL: firestoreUser.photoURL || parsed.photoURL,
+                isAnonymous: false,
+                onboardingComplete: firestoreUser.onboardingComplete || false,
+              };
+              
+              console.log('[Auth] Setting user from stored+Firestore, displayName:', authUser.displayName);
+              setUser(authUser);
+              setIsFirstTime(!authUser.onboardingComplete);
+              return; // Don't set user to null below
+            }
+          } catch (error) {
+            console.error('[Auth] Failed to fetch Firestore data for stored user:', error);
+          }
+          
+          // Fallback: use cached data if Firestore fetch fails
+          if (isDemoMode(parsed.uid)) {
+            console.log('[Auth] Fallback: Using cached demo user data');
+            const onboardingComplete = await checkOnboardingStatus(parsed.uid);
+            setUser({
+              ...parsed,
+              isAnonymous: false,
+              onboardingComplete,
+            });
+            setIsFirstTime(!onboardingComplete);
+            return;
+          }
         }
       }
     } catch (error) {
       console.error('[Auth] Error checking stored auth state:', error);
     }
+    console.log('[Auth] No valid stored auth state, setting user to null');
     setUser(null);
   };
 
@@ -283,8 +400,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
-  // Sign in with Google
-  const signInWithGoogle = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+  // Sign in with Google (only available with native build, not in Expo Go)
+  const signInWithGoogleImpl = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    if (!googleSignInAvailableGlobal || !GoogleSignin) {
+      return { success: false, error: 'Google Sign-In is not available. Please use email/password or build the app natively.' };
+    }
+
     try {
       setLoading(true);
       
@@ -299,7 +420,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Get the user's ID token
       const response = await GoogleSignin.signIn();
       
-      if (!isSuccessResponse(response)) {
+      if (!isSuccessResponse || !isSuccessResponse(response)) {
         throw new Error('Google Sign-In was cancelled');
       }
 
@@ -322,11 +443,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       let errorMessage = 'Google Sign-In failed. Please try again.';
       
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+      if (statusCodes && error.code === statusCodes.SIGN_IN_CANCELLED) {
         errorMessage = 'Sign in was cancelled.';
-      } else if (error.code === statusCodes.IN_PROGRESS) {
+      } else if (statusCodes && error.code === statusCodes.IN_PROGRESS) {
         errorMessage = 'Sign in is already in progress.';
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+      } else if (statusCodes && error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         errorMessage = 'Google Play Services not available.';
       }
       
@@ -345,15 +466,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const auth = firebaseAuth();
       await firebaseSignOut(auth);
       
-      // Sign out from Google if signed in
-      try {
-        const isGoogleSignedIn = await GoogleSignin.isSignedIn();
-        if (isGoogleSignedIn) {
-          await GoogleSignin.revokeAccess();
-          await GoogleSignin.signOut();
+      // Sign out from Google if signed in (only if Google Sign-In is available)
+      if (googleSignInAvailableGlobal && GoogleSignin) {
+        try {
+          const isGoogleSignedIn = await GoogleSignin.isSignedIn();
+          if (isGoogleSignedIn) {
+            await GoogleSignin.revokeAccess();
+            await GoogleSignin.signOut();
+          }
+        } catch (googleError) {
+          console.warn('[Auth] Google sign out error (non-blocking):', googleError);
         }
-      } catch (googleError) {
-        console.warn('[Auth] Google sign out error (non-blocking):', googleError);
       }
       
       // Clear stored auth state
@@ -405,10 +528,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isFirstTime,
     signIn,
     signUp,
-    signInWithGoogle,
+    signInWithGoogle: googleSignInAvailableGlobal ? signInWithGoogleImpl : null,
     signOut,
     completeOnboarding,
     emailPasswordEnabled: ENABLE_EMAIL_PASSWORD_LOGIN,
+    googleSignInAvailable: googleSignInAvailableGlobal,
   };
 
   return (

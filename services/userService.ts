@@ -138,34 +138,46 @@ class UserService {
    * Called after successful authentication to sync user data
    */
   async ensureUserExists(userData: { uid: string; email: string; displayName: string; photoURL: string | null }): Promise<void> {
+    console.log('[UserService] ensureUserExists called with:', JSON.stringify(userData));
     try {
       // Try to get existing user
+      console.log('[UserService] Checking if user exists...');
       const existingUser = await this.getUser(userData.uid);
+      console.log('[UserService] Existing user:', existingUser ? 'found' : 'not found');
       
       if (existingUser) {
+        console.log('[UserService] Existing user displayName:', existingUser.displayName);
         // User exists, update any changed fields
         const updates: Partial<User> = {};
         if (userData.displayName && userData.displayName !== existingUser.displayName) {
-          updates.displayName = userData.displayName;
+          console.log('[UserService] WARNING: displayName mismatch! Firebase Auth:', userData.displayName, 'Firestore:', existingUser.displayName);
+          // DON'T overwrite Firestore displayName with Firebase Auth displayName
+          // The Firestore displayName should be the source of truth
+          // updates.displayName = userData.displayName;
         }
         if (userData.photoURL && userData.photoURL !== existingUser.photoURL) {
           updates.photoURL = userData.photoURL;
         }
         
         if (Object.keys(updates).length > 0) {
+          console.log('[UserService] Updating user with:', JSON.stringify(updates));
           await this.updateUser(userData.uid, updates);
+        } else {
+          console.log('[UserService] No updates needed');
         }
         return;
       }
       
       // User doesn't exist, create new user
+      console.log('[UserService] Creating new user...');
       await this.createUser(userData.uid, {
         email: userData.email,
         displayName: userData.displayName,
         photoURL: userData.photoURL,
       });
+      console.log('[UserService] User created successfully');
     } catch (error) {
-      console.error('❌ Error ensuring user exists:', error);
+      console.error('[UserService] ERROR ensuring user exists:', error);
       // Don't throw - this is a non-blocking operation
     }
   }
@@ -215,17 +227,24 @@ class UserService {
 
     try {
       logFirebaseOp('GET', 'users', userId);
+      console.log('[UserService] getUser called for UID:', userId);
+      console.log('[UserService] API URL:', `${API_BASE}/api/user/${userId}`);
       
-      const response = await axios.get(`${API_BASE}/api/users/${userId}`);
+      const response = await axios.get(`${API_BASE}/api/user/${userId}`);
+      console.log('[UserService] API response status:', response.status);
+      console.log('[UserService] API response data:', JSON.stringify(response.data));
       
       if (response.data.ok && response.data.user) {
-        console.log('✅ User fetched successfully:', userId);
+        console.log('[UserService] User fetched successfully:', userId);
+        console.log('[UserService] User displayName from API:', response.data.user.displayName);
         return response.data.user as User;
       }
       
+      console.log('[UserService] No user in response, returning null');
       return null;
     } catch (error: any) {
-      console.error('❌ Error getting user:', error.message);
+      console.error('[UserService] ERROR getting user:', error.message);
+      console.error('[UserService] Error details:', error.response?.data || error);
       return null;
     }
   }

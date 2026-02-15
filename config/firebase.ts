@@ -16,14 +16,17 @@ const firebaseConfig = {
 
 /**
  * Demo user ID constant - used to skip Firebase operations in demo mode
+ * MUST be a fake ID that doesn't match any real Firebase Auth UIDs
  */
-export const DEMO_USER_ID = 'Re2y49L9aJPvfwUPD5oAiwxmvvU2';
+export const DEMO_USER_ID = 'DEMO_USER_LOCAL_ONLY';
 
 /**
  * Check if we're running in demo mode
  */
 export const isDemoMode = (userId: string | null): boolean => {
-  return !userId || userId === DEMO_USER_ID || userId.startsWith('demo-user-');
+  // Only treat as demo mode if explicitly a demo user prefix
+  // Real Firebase UIDs should never match these patterns
+  return !userId || userId === DEMO_USER_ID || userId.startsWith('demo-user-') || userId.startsWith('DEMO_');
 };
 
 /**

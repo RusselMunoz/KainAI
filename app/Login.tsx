@@ -20,7 +20,7 @@ import { useAuth, ENABLE_EMAIL_PASSWORD_LOGIN } from '../contexts/AuthContext';
 
 export default function SignIn() {
   const router = useRouter();
-  const { signIn, signUp, signInWithGoogle, loading, emailPasswordEnabled } = useAuth();
+  const { signIn, signUp, signInWithGoogle, loading, emailPasswordEnabled, googleSignInAvailable } = useAuth();
   
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -30,6 +30,10 @@ export default function SignIn() {
   const [localLoading, setLocalLoading] = useState(false);
 
   const handleGooglePress = async () => {
+    if (!signInWithGoogle) {
+      Alert.alert('Not Available', 'Google Sign-In requires building the app natively. Please use email/password instead.');
+      return;
+    }
     try {
       setLocalLoading(true);
       const result = await signInWithGoogle();
@@ -179,21 +183,30 @@ export default function SignIn() {
               </>
             )}
 
-            {/* Google Sign-In Button */}
-            <Pressable 
-              style={[styles.googleButton, isLoading && styles.buttonDisabled]} 
-              onPress={handleGooglePress}
-              disabled={isLoading}
-            >
-              {isLoading && !emailPasswordEnabled ? (
-                <ActivityIndicator color="#DB4437" size="small" />
-              ) : (
-                <>
-                  <AntDesign name="google" size={18} color="#DB4437" />
-                  <Text style={styles.googleText}>Continue with Google</Text>
-                </>
-              )}
-            </Pressable>
+            {/* Google Sign-In Button - only show if available */}
+            {googleSignInAvailable && (
+              <Pressable 
+                style={[styles.googleButton, isLoading && styles.buttonDisabled]} 
+                onPress={handleGooglePress}
+                disabled={isLoading}
+              >
+                {isLoading && !emailPasswordEnabled ? (
+                  <ActivityIndicator color="#DB4437" size="small" />
+                ) : (
+                  <>
+                    <AntDesign name="google" size={18} color="#DB4437" />
+                    <Text style={styles.googleText}>Continue with Google</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+
+            {/* Message when Google Sign-In is not available (Expo Go) */}
+            {!googleSignInAvailable && (
+              <Text style={styles.googleNotAvailable}>
+                Google Sign-In available after building the app natively
+              </Text>
+            )}
 
             <Text style={styles.secured}>Secured with Firebase</Text>
 
@@ -358,6 +371,13 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   googleText: { marginLeft: 10, fontSize: 14, color: '#111', fontWeight: '500' },
+  googleNotAvailable: { 
+    marginTop: 8, 
+    fontSize: 12, 
+    color: '#9ca3af', 
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   secured: { marginTop: 16, fontSize: 12, color: '#4b5563', fontWeight: '600' },
   links: { marginTop: 10, fontSize: 11, color: '#9ca3af', textAlign: 'center' },
 });

@@ -32,6 +32,7 @@ import Avatar from '../../components/Avatar';
 import recipeService from '../../services/recipe.service';
 import userStatsService from '../../services/user-stats.service';
 import { useUser } from '../../contexts/UserContext';
+import { useAuth } from '../../contexts/AuthContext';
 import type { Recipe, TabName } from '../../types';
 
 // Loading fallback for lazy components
@@ -67,16 +68,12 @@ export default function Dashboard() {
   
   // User state - using global context for instant sync across screens
   const { profile, stats, updateStats } = useUser();
+  const { user } = useAuth();
   
   // Derived values from context - these update instantly when debug changes them
   const userXP = stats.xp;
   const userLevel = stats.level;
   const rewardPoints = stats.rewardPoints;
-
-  // Get first name from profile
-  const userName = profile.displayName 
-    ? profile.displayName.split(' ')[0] 
-    : 'User';
 
   // Load recipes when switching to Recipes tab
   useEffect(() => {
@@ -193,7 +190,7 @@ export default function Dashboard() {
             size={48} 
           />
           <View style={{ marginLeft: 12 }}>
-            <Text style={styles.hello}>Hello, {userName}!</Text>
+            <Text style={styles.hello}>Hello, {user?.displayName || 'User'}!</Text>
             {/* XP under name - clickable to go to Awards tab */}
             <TouchableOpacity 
               style={styles.xpUnderName}
