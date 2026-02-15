@@ -114,7 +114,7 @@ export default function Dashboard() {
       // Sync context with updated stats from service
       await updateStats({ 
         xp: result.newXP, 
-        level: result.newLevel || stats.level,
+        level: result.newLevel ?? stats.level,
         recipesCompleted: stats.recipesCompleted + 1,
       });
       

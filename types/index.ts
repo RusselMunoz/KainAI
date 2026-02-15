@@ -1,8 +1,21 @@
 // types/index.ts - TypeScript interfaces for Cheffy app
 
+import type { ReactElement, ReactNode } from 'react';
+import type { ViewProps } from 'react-native';
+
 // ==================== USER TYPES ====================
 
-export type UserLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'Expert' | 'Master Chef';
+export type UserLevel =
+  | 'Beginner'
+  | 'Novice Cook'
+  | 'Home Chef'
+  | 'Skilled Chef'
+  | 'Expert Chef'
+  | 'Culinary Legend'
+  | 'Intermediate'
+  | 'Advanced'
+  | 'Expert'
+  | 'Master Chef';
 
 export interface User {
   uid: string;
@@ -13,6 +26,8 @@ export interface User {
   bio: string;
   dietary_preferences: string[];
   dietary_allergies: string[];
+  dietary_custom?: string;
+  allergy_custom?: string;
   cooking_skills: string[];
   level: UserLevel;
   xp: number;
@@ -204,15 +219,11 @@ export type TabName = 'Chat' | 'Recipes' | 'Community' | 'Awards';
 // ==================== MODULE STUBS ====================
 
 declare module 'react-native-zoom-reanimated' {
-  import { ReactNode } from 'react';
-  import { ViewProps } from 'react-native';
-
-  export type ZoomProps = ViewProps & {
+  export interface ZoomProps extends ViewProps {
     children?: ReactNode;
-  };
+  }
 
-  const Zoom: (props: ZoomProps) => JSX.Element;
-  export default Zoom;
+  export default function Zoom(props: ZoomProps): ReactElement;
 }
 
 export interface TabSwitchContext {

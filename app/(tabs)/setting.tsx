@@ -9,11 +9,13 @@ import {
   ScrollView,
   Platform,
   StatusBar as RNStatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 import { useUser } from '../../contexts/UserContext';
 import Avatar from '../../components/Avatar';
+import authService from '../../services/auth.service';
 
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
 
@@ -61,6 +63,20 @@ export default function SettingsScreen() {
   const onBack = () => {
     router.back();
     console.log('back pressed');
+  };
+
+  const onSignOut = async () => {
+    try {
+      const result = await authService.signOut();
+      if (!result.success) {
+        Alert.alert('Sign Out Failed', 'Please try again.');
+        return;
+      }
+      router.replace('/Login');
+    } catch (error: any) {
+      console.error('Sign-out error:', error);
+      Alert.alert('Sign Out Failed', error?.message || 'Unable to sign out right now.');
+    }
   };
 
   const onPressItem = (key: string) => {
@@ -166,6 +182,10 @@ export default function SettingsScreen() {
             </View>
           </View>
         ))}
+
+        <Pressable style={styles.logoutButton} onPress={onSignOut}>
+          <Text style={styles.logoutText}>Sign Out</Text>
+        </Pressable>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -285,5 +305,19 @@ const styles = StyleSheet.create({
   rowText: {
     color: '#111',
     fontSize: 15,
+  },
+  logoutButton: {
+    marginTop: 10,
+    backgroundColor: '#dc2626',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#b91c1c',
+  },
+  logoutText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

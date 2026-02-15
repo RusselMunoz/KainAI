@@ -4,6 +4,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import axios from 'axios';
+import type { UserLevel } from '../types';
 
 const API_BASE = Platform.select({
   android: 'http://10.0.2.2:5173',
@@ -13,7 +14,7 @@ const API_BASE = Platform.select({
 const USER_STATS_KEY = '@kainai_user_stats';
 
 // XP thresholds for levels
-const LEVEL_THRESHOLDS = [
+const LEVEL_THRESHOLDS: { level: UserLevel; minXP: number }[] = [
   { level: 'Beginner', minXP: 0 },
   { level: 'Novice Cook', minXP: 200 },
   { level: 'Home Chef', minXP: 500 },
@@ -38,7 +39,7 @@ export const XP_REWARDS = {
 export interface UserStats {
   xp: number;
   rewardPoints: number;  // Separate currency for rewards store
-  level: string;
+  level: UserLevel;
   recipesCompleted: number;
   recipesShared: number;
   totalIngredientsUsed: number;
@@ -111,8 +112,8 @@ class UserStatsService {
   /**
    * Calculate level from XP
    */
-  calculateLevel(xp: number): string {
-    let level = 'Beginner';
+  calculateLevel(xp: number): UserLevel {
+    let level: UserLevel = 'Beginner';
     for (const threshold of LEVEL_THRESHOLDS) {
       if (xp >= threshold.minXP) {
         level = threshold.level;
@@ -151,7 +152,7 @@ class UserStatsService {
   /**
    * Award XP and check for level up
    */
-  async awardXP(amount: number, reason: string): Promise<{ newXP: number; leveledUp: boolean; newLevel: string | null }> {
+  async awardXP(amount: number, reason: string): Promise<{ newXP: number; leveledUp: boolean; newLevel: UserLevel | null }> {
     const oldLevel = this.stats.level;
     this.stats.xp += amount;
     const newLevel = this.calculateLevel(this.stats.xp);
@@ -174,7 +175,7 @@ class UserStatsService {
   /**
    * Track recipe completion
    */
-  async onRecipeComplete(ingredients: string[] = []): Promise<{ xpAwarded: number; leveledUp: boolean; newLevel: string | null; newXP: number; newAchievements: string[] }> {
+  async onRecipeComplete(ingredients: string[] = []): Promise<{ xpAwarded: number; leveledUp: boolean; newLevel: UserLevel | null; newXP: number; newAchievements: string[] }> {
     this.stats.recipesCompleted++;
     let newAchievements: string[] = [];
     

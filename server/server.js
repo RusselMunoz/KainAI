@@ -68,13 +68,37 @@ const MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const BASE = 'https://api.groq.com/openai/v1';
 
 // Firestore services
-const { addUser, getUserData, updateUserData } = require('./services/firestore');
+const { addUser, getUserData, updateUserData, ensureUserExists } = require('./services/firestore');
 const recipeService = require('./services/recipe.service');
 const communityService = require('./services/community.service');
 const uploadService = require('./services/upload.service');
 
 // Log Cloudinary config status
 console.log('☁️ Cloudinary:', uploadService.isCloudinaryConfigured() ? 'CONFIGURED' : 'NOT CONFIGURED (demo mode images)');
+
+function extractUserMetadata(req) {
+  const metadata = {};
+  const headerEmail = req.headers?.['x-user-email'];
+  const headerName = req.headers?.['x-user-name'];
+  const headerPhoto = req.headers?.['x-user-photo'];
+
+  const email = req.body?.email ?? req.query?.email ?? headerEmail;
+  if (email) {
+    metadata.email = email;
+  }
+
+  const displayName = req.body?.displayName ?? req.query?.displayName ?? headerName;
+  if (displayName) {
+    metadata.displayName = displayName;
+  }
+
+  const photoURL = req.body?.photoURL ?? headerPhoto;
+  if (photoURL) {
+    metadata.photoURL = photoURL;
+  }
+
+  return metadata;
+}
 
 // ==================== IMAGE UPLOAD ENDPOINT ====================
 // POST /api/upload - Upload image(s) to Cloudinary
@@ -182,6 +206,7 @@ Respond with ONLY a JSON object:
 app.get('/api/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    await ensureUserExists(userId, extractUserMetadata(req));
     const userData = await getUserData(userId);
     return res.json({ ok: true, user: userData });
   } catch (err) {
@@ -196,6 +221,7 @@ app.put('/api/user/:userId', async (req, res) => {
     const { userId } = req.params;
     const updates = req.body;
     console.log(`📝 PUT /api/user/${userId} - Updating user with:`, JSON.stringify(updates));
+    await ensureUserExists(userId, extractUserMetadata(req));
     const updatedUser = await updateUserData(userId, updates);
     return res.json({ ok: true, user: updatedUser });
   } catch (err) {
@@ -209,6 +235,7 @@ app.patch('/api/user/:userId', async (req, res) => {
     const { userId } = req.params;
     const updates = req.body;
     console.log(`📝 PATCH /api/user/${userId} - Updating user with:`, JSON.stringify(updates));
+    await ensureUserExists(userId, extractUserMetadata(req));
     const updatedUser = await updateUserData(userId, updates);
     return res.json({ ok: true, user: updatedUser });
   } catch (err) {

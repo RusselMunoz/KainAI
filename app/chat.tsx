@@ -4,7 +4,10 @@ import { Platform, View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, K
 import { GiftedChat, IMessage, Send, Bubble, InputToolbar } from 'react-native-gifted-chat';
 import axios from 'axios';
 import { validateIngredient } from '../services/profanity-filter.service';
+import recipeService from '../services/recipe.service';
+import userStatsService from '../services/user-stats.service';
 import { useAuth } from '../contexts/AuthContext';
+import type { Recipe } from '../types';
 
 // Get screen width for button sizing - match chat bubble width
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -65,6 +68,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   const userName = user?.displayName 
     ? user.displayName.split(' ')[0] 
     : 'Chef';
+  const activeUserId = user?.uid ?? null;
 
   const [messages, setMessages] = useState<ExtendedMessage[]>([
     {
@@ -77,6 +81,62 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [inputText, setInputText] = useState(''); // Track input text for manual send
   const [pendingAddIngredients, setPendingAddIngredients] = useState<string[] | null>(null); // Track ingredients when adding more
+  const statsLoadedRef = useRef(false);
+  const lastSavedRecipeRef = useRef<string | null>(null);
+
+  const ensureStatsLoaded = useCallback(async () => {
+    if (statsLoadedRef.current) {
+      return;
+    }
+    try {
+      await userStatsService.loadStats();
+      statsLoadedRef.current = true;
+    } catch (error) {
+      console.error('❌ Failed to load user stats:', error);
+    }
+  }, []);
+
+  const persistGeneratedRecipe = useCallback(
+    async (recipeId?: string | null, recipePayload?: Recipe | null) => {
+      if (!activeUserId) {
+        return;
+      }
+
+      try {
+        const syncedRecipe = await recipeService.syncGeneratedRecipe(
+          activeUserId,
+          recipePayload ?? null,
+          recipeId ?? null,
+        );
+
+        if (!syncedRecipe) {
+          return;
+        }
+
+        if (lastSavedRecipeRef.current === syncedRecipe.id) {
+          return;
+        }
+        lastSavedRecipeRef.current = syncedRecipe.id;
+
+        await ensureStatsLoaded();
+
+        const ingredientNames = Array.isArray(syncedRecipe.ingredients)
+          ? syncedRecipe.ingredients
+              .map((ingredient: any) =>
+                typeof ingredient === 'string' ? ingredient : ingredient?.name || ''
+              )
+              .filter(Boolean)
+          : [];
+
+        if (ingredientNames.length > 0) {
+          await userStatsService.onRecipeComplete(ingredientNames);
+        }
+      } catch (error) {
+        console.error('❌ Failed to persist generated recipe:', error);
+      }
+    },
+    [activeUserId, ensureStatsLoaded]
+  );
   
   // Check if there's an active confirmation message requiring button interaction
   const hasActiveConfirmation = messages.some(
@@ -154,10 +214,10 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
     }
     
     // Use actual Firebase UID from auth, fallback to demo mode if not authenticated
-    const userId = user?.uid || 'demo-user-id';
+    const requestUserId = activeUserId || 'demo-user-id';
     const requestBody = {
       prompt: userMessage,
-      userId,
+      userId: requestUserId,
       ingredientList,
       confirmed,
       temperature: 0.7,
@@ -201,6 +261,10 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         
         // Remove thinking message before adding response
         removeThinkingMessage();
+
+        if (data.recipeId || data.recipe) {
+          await persistGeneratedRecipe(data.recipeId ?? null, (data.recipe as Recipe) ?? null);
+        }
         
         // If a recipe was generated and saved, notify parent to switch tabs
         if (data.recipeId && data.navigateTo === 'Recipes') {
@@ -256,7 +320,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
       setIsTyping(false);
       removeThinkingMessage();
     }
-  }, [addThinkingMessage, removeThinkingMessage, onRecipeGenerated]);
+  }, [addThinkingMessage, removeThinkingMessage, onRecipeGenerated, activeUserId, persistGeneratedRecipe]);
 
 
   // Example: parse ingredient list from user message (replace with your own logic)

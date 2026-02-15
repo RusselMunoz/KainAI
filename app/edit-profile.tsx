@@ -21,13 +21,14 @@ import axios from 'axios';
 import uploadService from '../services/upload.service';
 import Avatar from '../components/Avatar';
 import { useUser, UserProfile } from '../contexts/UserContext';
+import type { UserLevel } from '../types';
 
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
 
 // Groq API for AI validation
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-const COOKING_LEVELS = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
+const COOKING_LEVELS: UserLevel[] = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
 const DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Halal', 'Kosher'];
 const ALLERGY_OPTIONS = ['Nuts', 'Shellfish', 'Eggs', 'Soy', 'Wheat', 'Fish', 'Sesame'];
 
@@ -77,6 +78,7 @@ export default function EditProfileScreen() {
       });
       setProfile({
         ...globalProfile,
+        displayName: globalProfile.displayName ?? '',
         customDietaryText: globalProfile.customDietaryText || '',
         customAllergyText: globalProfile.customAllergyText || '',
       });
@@ -146,15 +148,21 @@ export default function EditProfileScreen() {
   };
 
   const saveProfile = async () => {
-    if (!profile.displayName.trim()) {
+    const trimmedName = profile.displayName?.trim() ?? '';
+    if (!trimmedName) {
       Alert.alert('Error', 'Display name is required');
       return;
     }
 
     setSaving(true);
     try {
+      const normalizedProfile: UserProfile = {
+        ...profile,
+        displayName: trimmedName,
+      };
+      setProfile(normalizedProfile);
       // Update global profile - this propagates to ALL screens
-      await setGlobalProfile(profile);
+      await setGlobalProfile(normalizedProfile);
       Alert.alert('Success', 'Profile updated successfully!', [
         { text: 'OK', onPress: () => router.back() }
       ]);
@@ -273,7 +281,7 @@ export default function EditProfileScreen() {
               </View>
             ) : (
               <Avatar 
-                name={profile.displayName} 
+                name={profile.displayName ?? ''} 
                 photoURL={profile.photoURL} 
                 size={100} 
               />
@@ -290,7 +298,7 @@ export default function EditProfileScreen() {
           <Text style={styles.label}>Display Name</Text>
           <TextInput
             style={styles.input}
-            value={profile.displayName}
+            value={profile.displayName ?? ''}
             onChangeText={text => setProfile(prev => ({ ...prev, displayName: text }))}
             placeholder="Enter your name"
             placeholderTextColor="#999"

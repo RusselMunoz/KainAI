@@ -18,16 +18,16 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../../contexts/UserContext';
-import { XP_REWARDS } from '../../services/user-stats.service';
+import userStatsService, { XP_REWARDS } from '../../services/user-stats.service';
 import communityService from '../../services/community.service';
-import type { CommunityPost } from '../../types';
+import type { CommunityPost, UserLevel } from '../../types';
 
 // Storage keys
 const STATS_KEY = '@kainai_user_stats';
 const PROFILE_KEY = '@cheffy_user_profile';
 
 // Level thresholds for calculating level from XP
-const LEVEL_THRESHOLDS = [
+const LEVEL_THRESHOLDS: { level: UserLevel; minXP: number }[] = [
   { level: 'Beginner', minXP: 0 },
   { level: 'Novice Cook', minXP: 200 },
   { level: 'Home Chef', minXP: 500 },
@@ -37,8 +37,10 @@ const LEVEL_THRESHOLDS = [
   { level: 'Culinary Legend', minXP: 10000 },
 ];
 
-const calculateLevel = (xp: number): string => {
-  let level = 'Beginner';
+const EDITABLE_COOKING_LEVELS: UserLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
+
+const calculateLevel = (xp: number): UserLevel => {
+  let level: UserLevel = 'Beginner';
   for (const threshold of LEVEL_THRESHOLDS) {
     if (xp >= threshold.minXP) {
       level = threshold.level;
@@ -55,9 +57,9 @@ export default function DebugScreen() {
   const [refreshing, setRefreshing] = useState(false);
   
   // Profile override state
-  const [editDisplayName, setEditDisplayName] = useState(profile.displayName);
-  const [editPhotoURL, setEditPhotoURL] = useState(profile.photoURL || '');
-  const [editCookingLevel, setEditCookingLevel] = useState(profile.cookingLevel);
+  const [editDisplayName, setEditDisplayName] = useState(profile.displayName ?? '');
+  const [editPhotoURL, setEditPhotoURL] = useState(profile.photoURL ?? '');
+  const [editCookingLevel, setEditCookingLevel] = useState<UserLevel>(profile.cookingLevel);
   
   // Community posts state
   const [posts, setPosts] = useState<CommunityPost[]>([]);
@@ -71,8 +73,8 @@ export default function DebugScreen() {
   }, []);
 
   useEffect(() => {
-    setEditDisplayName(profile.displayName);
-    setEditPhotoURL(profile.photoURL || '');
+    setEditDisplayName(profile.displayName ?? '');
+    setEditPhotoURL(profile.photoURL ?? '');
     setEditCookingLevel(profile.cookingLevel);
   }, [profile]);
 
@@ -165,8 +167,9 @@ export default function DebugScreen() {
   // Profile Management
   const applyProfileChanges = async () => {
     try {
+      const normalizedName = editDisplayName.trim();
       await updateProfile({
-        displayName: editDisplayName,
+        displayName: normalizedName || null,
         photoURL: editPhotoURL || null,
         cookingLevel: editCookingLevel,
       });
@@ -185,7 +188,7 @@ export default function DebugScreen() {
         parsedStats.recipesCompleted = Math.max(0, (parsedStats.recipesCompleted || 0) + amount);
         await AsyncStorage.setItem(STATS_KEY, JSON.stringify(parsedStats));
       }
-      await loadStats();
+      await refreshStats();
       Alert.alert('Updated', `Recipe count ${amount > 0 ? 'increased' : 'decreased'} by ${Math.abs(amount)}`);
     } catch (error) {
       Alert.alert('Error', 'Failed to update recipe count');
@@ -207,7 +210,7 @@ export default function DebugScreen() {
           await AsyncStorage.setItem(STATS_KEY, JSON.stringify(parsedStats));
         }
       }
-      await loadStats();
+      await refreshStats();
       Alert.alert('Achievement Unlocked', `${achievementId} completed! +50 XP`);
     } catch (error) {
       Alert.alert('Error', 'Failed to complete achievement');
@@ -256,7 +259,7 @@ export default function DebugScreen() {
           onPress: async () => {
             try {
               await AsyncStorage.clear();
-              await loadStats();
+              await refreshStats();
               Alert.alert('Cleared', 'All app data has been cleared. Restart the app for full effect.');
             } catch (error) {
               Alert.alert('Error', 'Failed to clear storage');
@@ -409,7 +412,7 @@ export default function DebugScreen() {
             
             <Text style={styles.inputLabel}>Cooking Skill</Text>
             <View style={styles.skillButtonRow}>
-              {['Beginner', 'Intermediate', 'Advanced'].map(skill => (
+              {EDITABLE_COOKING_LEVELS.map(skill => (
                 <Pressable 
                   key={skill}
                   style={[
@@ -463,7 +466,7 @@ export default function DebugScreen() {
                 >
                   <Text style={styles.achievementText}>{achievement}</Text>
                   {stats.achievementsCompleted.includes(achievement) && (
-                    <AntDesign name="checkcircle" size={16} color="#2bb673" />
+                    <Feather name="check-circle" size={16} color="#2bb673" />
                   )}
                 </Pressable>
               ))}

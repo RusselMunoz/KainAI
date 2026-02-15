@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useUser } from '../../../contexts/UserContext';
 
 // Must match UserContext storage key
 const PROFILE_KEY = '@cheffy_user_profile';
@@ -11,6 +12,7 @@ const PROFILE_KEY = '@cheffy_user_profile';
 export default function EndStep() {
   const router = useRouter();
   const { completeOnboarding } = useAuth();
+  const { refreshProfile } = useUser();
   const [profile, setProfile] = useState<{ name: string; prefs: string; allergies: string; level: string } | null>(null);
   const hasCompletedRef = useRef(false);
 
@@ -55,6 +57,7 @@ export default function EndStep() {
         if (!hasCompletedRef.current) {
           hasCompletedRef.current = true;
           await completeOnboarding();
+          await refreshProfile();
         }
       } catch (e) {
         // ignore save errors here

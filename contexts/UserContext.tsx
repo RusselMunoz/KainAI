@@ -6,6 +6,7 @@ import userService from '../services/userService';
 import statsService from '../services/statsService';
 import { isDemoMode, DEMO_USER_ID } from '../config/firebase';
 import { useAuth } from './AuthContext';
+import type { UserLevel } from '../types';
 
 // Storage keys
 const PROFILE_KEY = '@cheffy_user_profile';
@@ -14,7 +15,7 @@ const STATS_KEY = '@kainai_user_stats';
 // Valid options for normalization (must match UI options in edit-profile.tsx)
 const VALID_DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Halal', 'Kosher'];
 const VALID_ALLERGY_OPTIONS = ['Nuts', 'Shellfish', 'Eggs', 'Soy', 'Wheat', 'Fish', 'Sesame'];
-const VALID_COOKING_LEVELS = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
+const VALID_COOKING_LEVELS: UserLevel[] = ['Beginner', 'Intermediate', 'Advanced', 'Expert', 'Master Chef'];
 
 /**
  * Normalize dietary preferences/allergies to match UI options (title case)
@@ -34,7 +35,7 @@ const normalizePreferences = (prefs: string[], validOptions: string[]): string[]
 /**
  * Normalize cooking level from cooking_skills array or level string
  */
-const normalizeCookingLevel = (cookingSkills: string[] | undefined, level: string | undefined): string => {
+const normalizeCookingLevel = (cookingSkills: string[] | undefined, level: string | undefined): UserLevel => {
   // First try cooking_skills array (user-selected during onboarding)
   if (Array.isArray(cookingSkills) && cookingSkills.length > 0) {
     const skill = cookingSkills[0];
@@ -51,12 +52,12 @@ const normalizeCookingLevel = (cookingSkills: string[] | undefined, level: strin
 
 // User profile interface
 export interface UserProfile {
-  displayName: string;
+  displayName: string | null;
   bio: string;
   photoURL: string | null;
   dietaryPreferences: string[];
   allergies: string[];
-  cookingLevel: string;
+  cookingLevel: UserLevel;
   // Custom text fields for specific dietary needs and allergies
   customDietaryText: string;
   customAllergyText: string;
@@ -66,7 +67,7 @@ export interface UserProfile {
 export interface UserStats {
   xp: number;
   rewardPoints: number;
-  level: string;
+  level: UserLevel;
   recipesCompleted: number;
   recipesShared: number;
   totalIngredientsUsed: number;
@@ -346,7 +347,7 @@ export function UserProvider({ children }: UserProviderProps) {
             console.log('[UserContext] Using auth displayName:', fallbackUser.displayName);
             setProfileState(prev => ({
               ...prev,
-              displayName: fallbackUser.displayName,
+              displayName: fallbackUser.displayName ?? '',
             }));
             console.log('[UserContext] ========== loadProfile FINISHED (Auth displayName path) ==========');
           } else {
@@ -415,7 +416,9 @@ export function UserProvider({ children }: UserProviderProps) {
         try {
           // Map profile keys to Firebase user document fields
           const firebaseUpdates: any = {};
-          if (updates.displayName !== undefined) firebaseUpdates.displayName = updates.displayName;
+          if (updates.displayName !== undefined) {
+            firebaseUpdates.displayName = updates.displayName ?? '';
+          }
           if (updates.bio !== undefined) firebaseUpdates.bio = updates.bio;
           if (updates.photoURL !== undefined) firebaseUpdates.photoURL = updates.photoURL;
           if (updates.dietaryPreferences !== undefined) firebaseUpdates.dietary_preferences = updates.dietaryPreferences;
@@ -447,7 +450,7 @@ export function UserProvider({ children }: UserProviderProps) {
       if (uid) {
         try {
           const firebaseProfile = {
-            displayName: newProfile.displayName,
+            displayName: newProfile.displayName ?? '',
             bio: newProfile.bio,
             photoURL: newProfile.photoURL,
             dietary_preferences: newProfile.dietaryPreferences,

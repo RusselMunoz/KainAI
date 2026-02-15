@@ -155,6 +155,36 @@ class RecipeService {
     }
   }
 
+  /**
+   * Sync newly generated recipes so they appear in local cache and recipe log
+   */
+  async syncGeneratedRecipe(userId: string, recipe?: Recipe | null, recipeId?: string | null): Promise<Recipe | null> {
+    if (!userId) {
+      return null;
+    }
+
+    let resolvedRecipe = recipe ?? null;
+
+    try {
+      if (!resolvedRecipe && recipeId) {
+        resolvedRecipe = await this.getRecipe(userId, recipeId);
+      }
+
+      if (!resolvedRecipe) {
+        return null;
+      }
+
+      const cachedRecipes = await this.getCachedRecipes(userId);
+      const filtered = cachedRecipes.filter((cached) => cached.id !== resolvedRecipe!.id);
+      await this.cacheRecipes(userId, [resolvedRecipe, ...filtered]);
+
+      return resolvedRecipe;
+    } catch (error) {
+      console.error('Error syncing generated recipe:', error);
+      return resolvedRecipe;
+    }
+  }
+
   // ==================== LOCAL STORAGE METHODS ====================
 
   /**

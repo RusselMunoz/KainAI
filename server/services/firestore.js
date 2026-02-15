@@ -1,6 +1,108 @@
 // services/firestore.js
 const admin = require('firebase-admin');
 
+// Try to derive an email from whatever metadata the caller provided.
+function extractEmailFromMetadata(userData) {
+  if (!userData) return null;
+
+  const candidates = [];
+  const pushCandidate = (value) => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        candidates.push(trimmed);
+      }
+    }
+  };
+
+  if (typeof userData === 'string') {
+    pushCandidate(userData);
+  } else if (typeof userData === 'object') {
+    pushCandidate(userData.email);
+    pushCandidate(userData.emailAddress);
+    pushCandidate(userData.user?.email);
+    pushCandidate(userData.user?.emailAddress);
+    pushCandidate(userData.profile?.email);
+    pushCandidate(userData.metadata?.email);
+    pushCandidate(userData.auth?.email);
+    pushCandidate(userData.auth?.token?.email);
+    pushCandidate(userData.auth?.token?.emailAddress);
+  }
+
+  return candidates[0] || null;
+}
+
+function sanitizeForFirestore(data) {
+  return Object.fromEntries(
+    Object.entries(data || {}).filter(([, value]) => value !== undefined)
+  );
+}
+
+async function ensureUserExists(userId, userData = {}) {
+  if (!userId || typeof userId !== 'string' || !userId.trim()) {
+    throw new Error('User ID is required.');
+  }
+
+  const uid = userId.trim();
+  const userRef = admin.firestore().collection('users').doc(uid);
+  const userDoc = await userRef.get();
+
+  if (userDoc.exists) {
+    return userDoc.data();
+  }
+
+  const normalizedMetadata = (userData && typeof userData === 'object') ? userData : {};
+
+  const {
+    dietary_preferences,
+    dietary_allergies,
+    cooking_skills,
+    onboardingComplete,
+    email,
+    displayName,
+    name,
+    metadata: nestedMetadata,
+    uid: _ignoredUid,
+    created_at,
+    updated_at,
+    ...rest
+  } = normalizedMetadata;
+
+  const metadataEmail = (typeof nestedMetadata?.email === 'string' && nestedMetadata.email.trim())
+    ? nestedMetadata.email.trim()
+    : null;
+
+  const resolvedEmail =
+    (typeof email === 'string' && email.trim())
+      ? email.trim()
+      : (metadataEmail || extractEmailFromMetadata({ ...normalizedMetadata, metadata: nestedMetadata }));
+
+  const resolvedDisplayName = displayName
+    || name
+    || nestedMetadata?.displayName
+    || nestedMetadata?.name
+    || null;
+
+  const newUserData = sanitizeForFirestore({
+    uid,
+    email: resolvedEmail ?? null,
+    displayName: resolvedDisplayName,
+    created_at: created_at || admin.firestore.FieldValue.serverTimestamp(),
+    dietary_preferences: Array.isArray(dietary_preferences) ? dietary_preferences : [],
+    dietary_allergies: Array.isArray(dietary_allergies) ? dietary_allergies : [],
+    cooking_skills: Array.isArray(cooking_skills) ? cooking_skills : [],
+    onboardingComplete: typeof onboardingComplete === 'boolean' ? onboardingComplete : false,
+    ...rest
+  });
+
+  console.log(`[Firestore] Creating user document for ${uid}`);
+  await userRef.set(newUserData, { merge: true });
+  console.log(`[Firestore] User ${uid} created`);
+
+  const createdDoc = await userRef.get();
+  return createdDoc.data();
+}
+
 // Add a new user to Firestore
 async function addUser(name) {
   if (!name || typeof name !== 'string' || !name.trim()) {
@@ -139,5 +241,6 @@ module.exports = {
   addDietaryAllergyPreference,
   addCookingSkill,
   getUserData,
-  updateUserData
+  updateUserData,
+  ensureUserExists
 };

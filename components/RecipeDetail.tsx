@@ -1053,10 +1053,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 4,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
 });
 
 export default RecipeDetail;

@@ -56,7 +56,12 @@ export const ensurePlayServices = async (): Promise<boolean> => {
  */
 export const isGoogleSignedIn = async (): Promise<boolean> => {
   try {
-    return await GoogleSignin.isSignedIn();
+    const hasSession = await GoogleSignin.hasPreviousSignIn();
+    if (!hasSession) {
+      return false;
+    }
+    const currentUser = await GoogleSignin.getCurrentUser();
+    return !!currentUser;
   } catch (error) {
     console.error('[GoogleSignIn] Check sign-in status error:', error);
     return false;
