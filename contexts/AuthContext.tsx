@@ -36,6 +36,7 @@ try {
 // Storage keys
 const AUTH_STATE_KEY = '@kainai_auth_state';
 const ONBOARDING_KEY = '@kainai_onboarding_complete';
+const PROFILE_KEY = '@cheffy_user_profile';
 
 // Toggle for email/password login - set to true to enable
 export const ENABLE_EMAIL_PASSWORD_LOGIN = true;
@@ -495,28 +496,65 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
-  // Mark onboarding as complete
+  // Mark onboarding as complete and save all onboarding data to Firestore
   const completeOnboarding = useCallback(async () => {
     if (!user) return;
     
     try {
+      // Read onboarding data from PROFILE_KEY (saved by endstep.tsx before calling this)
+      let onboardingData: {
+        displayName?: string;
+        dietary_preferences?: string[];
+        dietary_allergies?: string[];
+        cooking_skills?: string[];
+      } = {};
+      
+      try {
+        const profileStr = await AsyncStorage.getItem(PROFILE_KEY);
+        if (profileStr) {
+          const profile = JSON.parse(profileStr);
+          console.log('[Auth] Read onboarding profile from AsyncStorage:', profile);
+          
+          // Map UserProfile format to Firestore format
+          onboardingData = {
+            displayName: profile.displayName || undefined,
+            dietary_preferences: profile.dietary_preferences || [],
+            dietary_allergies: profile.dietary_allergies || [],
+            cooking_skills: profile.cooking_skills ? [profile.cooking_skills] : [],
+          };
+        }
+      } catch (e) {
+        console.warn('[Auth] Failed to read onboarding profile from AsyncStorage:', e);
+      }
+      
       // Update local state
-      setUser(prev => prev ? { ...prev, onboardingComplete: true } : null);
+      const newDisplayName = onboardingData.displayName || user.displayName;
+      setUser(prev => prev ? { 
+        ...prev, 
+        onboardingComplete: true,
+        displayName: newDisplayName,
+      } : null);
       setIsFirstTime(false);
       
       // Store locally
       await AsyncStorage.setItem(`${ONBOARDING_KEY}_${user.uid}`, 'true');
       
-      // Update in backend/Firestore
+      // Update in backend/Firestore with ALL onboarding data
       if (!isDemoMode(user.uid)) {
         try {
-          await userService.updateUser(user.uid, { onboardingComplete: true });
+          const updatePayload = {
+            onboardingComplete: true,
+            ...onboardingData,
+          };
+          console.log('[Auth] Saving onboarding data to Firestore:', updatePayload);
+          await userService.updateUser(user.uid, updatePayload);
+          console.log('[Auth] Successfully saved onboarding data to Firestore');
         } catch (error) {
-          console.warn('[Auth] Failed to sync onboarding status to backend:', error);
+          console.warn('[Auth] Failed to sync onboarding data to backend:', error);
         }
       }
       
-      console.log('[Auth] Onboarding marked as complete');
+      console.log('[Auth] Onboarding marked as complete with data:', onboardingData);
     } catch (error) {
       console.error('[Auth] Error completing onboarding:', error);
     }

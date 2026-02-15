@@ -212,7 +212,18 @@ export function UserProvider({ children }: UserProviderProps) {
       if (stored) {
         const parsedProfile = JSON.parse(stored);
         console.log('[UserContext] Loaded profile from AsyncStorage, displayName:', parsedProfile.displayName);
-        setProfileState(parsedProfile);
+        // Handle both snake_case (from onboarding) and camelCase (legacy) formats
+        const normalizedProfile: UserProfile = {
+          displayName: parsedProfile.displayName || '',
+          bio: parsedProfile.bio || '',
+          photoURL: parsedProfile.photoURL || null,
+          dietaryPreferences: parsedProfile.dietary_preferences || parsedProfile.dietaryPreferences || [],
+          allergies: parsedProfile.dietary_allergies || parsedProfile.allergies || [],
+          cookingLevel: parsedProfile.cooking_skills || parsedProfile.cookingLevel || 'Beginner',
+          customDietaryText: parsedProfile.customDietaryText || '',
+          customAllergyText: parsedProfile.customAllergyText || '',
+        };
+        setProfileState(normalizedProfile);
       } else {
         // Try to migrate from legacy onboarding format
         const legacyProfile = await AsyncStorage.getItem('profile');

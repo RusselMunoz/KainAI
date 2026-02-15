@@ -276,7 +276,7 @@ class UserService {
         updated_at: serverTimestamp(),
       };
       
-      await axios.patch(`${API_BASE}/api/users/${userId}`, updateData);
+      await axios.patch(`${API_BASE}/api/user/${userId}`, updateData);
       
       console.log('✅ User updated successfully:', userId);
     } catch (error: any) {

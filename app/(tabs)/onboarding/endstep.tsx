@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -12,8 +12,12 @@ export default function EndStep() {
   const router = useRouter();
   const { completeOnboarding } = useAuth();
   const [profile, setProfile] = useState<{ name: string; prefs: string; allergies: string; level: string } | null>(null);
+  const hasCompletedRef = useRef(false);
 
   useEffect(() => {
+    // Prevent re-running if already completed
+    if (hasCompletedRef.current) return;
+    
     let cancelled = false;
 
     (async () => {
@@ -31,14 +35,14 @@ export default function EndStep() {
         const prefsArray = prefs === 'None' ? [] : prefs.split(',').map(s => s.trim()).filter(Boolean);
         const allergiesArray = allergies === 'None' ? [] : allergies.split(',').map(s => s.trim()).filter(Boolean);
 
-        // Save in UserContext format (UserProfile interface)
+        // Save in snake_case format for backend compatibility
         const userProfile = {
           displayName: name,
           bio: '',
           photoURL: null,
-          dietaryPreferences: prefsArray,
-          allergies: allergiesArray,
-          cookingLevel: level,
+          dietary_preferences: prefsArray,
+          dietary_allergies: allergiesArray,
+          cooking_skills: level,
         };
 
         await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(userProfile));
@@ -47,7 +51,11 @@ export default function EndStep() {
         await AsyncStorage.multiRemove(['onboard_name','onboard_prefs','onboard_allergies','onboard_level']);
         
         // Mark onboarding as complete in AuthContext - this syncs to Firestore
-        await completeOnboarding();
+        // Only run once to prevent re-render loops
+        if (!hasCompletedRef.current) {
+          hasCompletedRef.current = true;
+          await completeOnboarding();
+        }
       } catch (e) {
         // ignore save errors here
         console.error('Error saving profile:', e);
@@ -65,7 +73,8 @@ export default function EndStep() {
         clearTimeout(t);
       };
     })();
-  }, [completeOnboarding]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount - completeOnboarding is stable via ref guard
 
   return (
     <SafeAreaView style={styles.root}>

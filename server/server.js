@@ -41,8 +41,8 @@ app.use(express.json());
 // simple CORS (allow all origins for dev)
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -68,7 +68,7 @@ const MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const BASE = 'https://api.groq.com/openai/v1';
 
 // Firestore services
-const { addUser, getUserData } = require('./services/firestore');
+const { addUser, getUserData, updateUserData } = require('./services/firestore');
 const recipeService = require('./services/recipe.service');
 const communityService = require('./services/community.service');
 const uploadService = require('./services/upload.service');
@@ -186,6 +186,33 @@ app.get('/api/user/:userId', async (req, res) => {
     return res.json({ ok: true, user: userData });
   } catch (err) {
     console.error('Error fetching user data:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+// Update user data in Firestore (PUT/PATCH)
+app.put('/api/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updates = req.body;
+    console.log(`📝 PUT /api/user/${userId} - Updating user with:`, JSON.stringify(updates));
+    const updatedUser = await updateUserData(userId, updates);
+    return res.json({ ok: true, user: updatedUser });
+  } catch (err) {
+    console.error('Error updating user:', err);
+    return res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+app.patch('/api/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updates = req.body;
+    console.log(`📝 PATCH /api/user/${userId} - Updating user with:`, JSON.stringify(updates));
+    const updatedUser = await updateUserData(userId, updates);
+    return res.json({ ok: true, user: updatedUser });
+  } catch (err) {
+    console.error('Error updating user:', err);
     return res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });

@@ -137,6 +137,9 @@ Stores user profiles, created by `userService.createUser()`.
   totalLikesReceived: number,       // Total likes on user's posts
   totalSaves: number,               // Total saves on user's posts
   
+  // Onboarding status
+  onboardingComplete: boolean,      // Whether user has completed initial onboarding flow
+  
   // Metadata
   created_at: Timestamp,            // Account creation date
   updated_at: Timestamp,            // Last update date
@@ -164,6 +167,7 @@ Stores user profiles, created by `userService.createUser()`.
   "postsCreated": 0,
   "totalLikesReceived": 0,
   "totalSaves": 0,
+  "onboardingComplete": true,
   "created_at": "2026-02-14T00:00:00.000Z",
   "updated_at": "2026-02-14T00:00:00.000Z",
   "is_active": true

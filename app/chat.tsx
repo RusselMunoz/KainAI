@@ -4,7 +4,7 @@ import { Platform, View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, K
 import { GiftedChat, IMessage, Send, Bubble, InputToolbar } from 'react-native-gifted-chat';
 import axios from 'axios';
 import { validateIngredient } from '../services/profanity-filter.service';
-import { useUser } from '../contexts/UserContext';
+import { useAuth } from '../contexts/AuthContext';
 
 // Get screen width for button sizing - match chat bubble width
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -60,10 +60,10 @@ interface ExtendedMessage extends IMessage {
 }
 
 export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
-  // Get user profile from context for personalized greetings
-  const { profile } = useUser();
-  const userName = profile.displayName 
-    ? profile.displayName.split(' ')[0] 
+  // Get user from auth context for personalized greetings (matches header greeting)
+  const { user } = useAuth();
+  const userName = user?.displayName 
+    ? user.displayName.split(' ')[0] 
     : 'Chef';
 
   const [messages, setMessages] = useState<ExtendedMessage[]>([

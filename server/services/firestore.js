@@ -90,10 +90,54 @@ async function getUserData(userId) {
   };
 }
 
+// Update user data in Firestore
+async function updateUserData(userId, updates) {
+  if (!userId || typeof userId !== 'string' || !userId.trim()) {
+    throw new Error('User ID is required.');
+  }
+  
+  const userRef = admin.firestore().collection('users').doc(userId.trim());
+  const userDoc = await userRef.get();
+  
+  if (!userDoc.exists) {
+    throw new Error('User not found.');
+  }
+  
+  // Filter out undefined values and add updated_at timestamp
+  const filteredUpdates = {};
+  const allowedFields = [
+    'displayName', 'username', 'bio', 'photoURL',
+    'dietary_preferences', 'dietary_allergies', 'dietary_custom', 'allergy_custom',
+    'cooking_skills', 'onboardingComplete', 'level', 'xp',
+    'recipesCompleted', 'postsCreated', 'totalLikesReceived', 'totalSaves'
+  ];
+  
+  for (const key of allowedFields) {
+    if (updates[key] !== undefined) {
+      filteredUpdates[key] = updates[key];
+    }
+  }
+  
+  if (Object.keys(filteredUpdates).length === 0) {
+    console.log('No valid fields to update');
+    return userDoc.data();
+  }
+  
+  // Add updated_at timestamp
+  filteredUpdates.updated_at = admin.firestore.FieldValue.serverTimestamp();
+  
+  await userRef.update(filteredUpdates);
+  
+  // Return the updated user data
+  const updatedDoc = await userRef.get();
+  return updatedDoc.data();
+}
+
 module.exports = {
   addUser,
   addDietaryPreference,
   addDietaryAllergyPreference,
   addCookingSkill,
-  getUserData
+  getUserData,
+  updateUserData
 };
