@@ -352,6 +352,9 @@ function generateTags(recipe) {
 async function saveRecipe(userId, recipeData) {
   if (!userId) throw new Error('User ID is required');
   
+  console.log(`\n📥 saveRecipe called for userId: ${userId}`);
+  console.log(`   Recipe title: ${recipeData?.title || 'No title'}`);
+  
   const now = admin.firestore.Timestamp.now();
   
   const recipe = {
@@ -392,7 +395,10 @@ async function saveRecipe(userId, recipeData) {
   // For real users, save to Firestore
   const userRecipeRef = db.collection('users').doc(userId).collection('recipes').doc();
   recipe.id = userRecipeRef.id;
+  
+  console.log(`   📁 Saving to Firestore path: users/${userId}/recipes/${recipe.id}`);
   await userRecipeRef.set(recipe);
+  console.log(`   ✅ Recipe saved successfully: ${recipe.id}`);
 
   return recipe;
 }
@@ -403,17 +409,20 @@ async function saveRecipe(userId, recipeData) {
 async function getUserRecipes(userId, status = null) {
   if (!userId) throw new Error('User ID is required');
   
+  console.log(`\n📋 getUserRecipes called for userId: ${userId}, status filter: ${status || 'none'}`);
+  
   // Use in-memory storage for demo users
   if (isDemoUser(userId)) {
     let recipes = demoRecipeStore.get(userId) || [];
     if (status) {
       recipes = recipes.filter(r => r.status === status);
     }
-    console.log(`📋 Demo user recipes fetched: ${recipes.length} recipes`);
+    console.log(`   📋 Demo user recipes fetched: ${recipes.length} recipes`);
     return recipes;
   }
   
   // For real users, query Firestore
+  console.log(`   📁 Querying Firestore path: users/${userId}/recipes`);
   let query = db.collection('users').doc(userId).collection('recipes');
   
   if (status) {
@@ -423,7 +432,12 @@ async function getUserRecipes(userId, status = null) {
   query = query.orderBy('createdAt', 'desc');
   
   const snapshot = await query.get();
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const recipes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  console.log(`   ✅ Found ${recipes.length} recipes for user ${userId}`);
+  if (recipes.length > 0) {
+    console.log(`   📝 Recipe titles: ${recipes.map(r => r.title).join(', ')}`);
+  }
+  return recipes;
 }
 
 /**

@@ -49,8 +49,8 @@ const screenW = Dimensions.get('window').width;
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
 const composerHeight = 66; // used for bottom padding so content isn't hidden
 
-// TODO: Replace with actual user ID from authentication
-const DEMO_USER_ID = 'demo-user-id';
+// Fallback user ID for demo mode (when not authenticated)
+const DEMO_USER_ID_FALLBACK = 'demo-user-id';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -70,6 +70,9 @@ export default function Dashboard() {
   const { profile, stats, updateStats } = useUser();
   const { user } = useAuth();
   
+  // Use actual Firebase UID from auth, fallback to demo mode if not authenticated
+  const userId = user?.uid || DEMO_USER_ID_FALLBACK;
+  
   // Derived values from context - these update instantly when debug changes them
   const userXP = stats.xp;
   const userLevel = stats.level;
@@ -84,7 +87,7 @@ export default function Dashboard() {
 
   const loadRecipes = async () => {
     try {
-      const userRecipes = await recipeService.getUserRecipes(DEMO_USER_ID);
+      const userRecipes = await recipeService.getUserRecipes(userId);
       setRecipes(userRecipes);
     } catch (error) {
       console.error('Error loading recipes:', error);
@@ -261,7 +264,7 @@ export default function Dashboard() {
         {tab === 'Community' && (
           <Suspense fallback={<LoadingFallback />}>
             <CommunityFeed
-              userId={DEMO_USER_ID}
+              userId={userId}
               onSharePress={() => {
                 if (completedRecipe) {
                   setShowShareModal(true);
@@ -300,7 +303,7 @@ export default function Dashboard() {
           {selectedRecipe && (
             <RecipeDetail
               recipe={selectedRecipe}
-              userId={DEMO_USER_ID}
+              userId={userId}
               onClose={() => {
                 setShowRecipeDetail(false);
                 loadRecipes(); // Refresh in case status changed
@@ -317,7 +320,7 @@ export default function Dashboard() {
           visible={showShareModal}
           recipe={completedRecipe}
           rating={completedRating}
-          userId={DEMO_USER_ID}
+          userId={userId}
           onClose={() => setShowShareModal(false)}
           onShare={handleShareComplete}
         />

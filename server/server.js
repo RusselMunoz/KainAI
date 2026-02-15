@@ -533,10 +533,12 @@ app.get('/api/recipes/:userId', async (req, res) => {
     const { userId } = req.params;
     const { status } = req.query;
     
+    console.log(`\n📋 GET /api/recipes/${userId} - Fetching recipes (status: ${status || 'all'})`);
     const recipes = await recipeService.getUserRecipes(userId, status || null);
+    console.log(`   📤 Returning ${recipes.length} recipes`);
     return res.json({ ok: true, recipes });
   } catch (err) {
-    console.error('Error fetching recipes:', err);
+    console.error('❌ Error fetching recipes:', err);
     return res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });

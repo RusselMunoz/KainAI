@@ -14,8 +14,13 @@ async function createPost(postData) {
   if (!title) throw new Error('Post title is required');
   
   // Get author info
+  console.log(`📝 Creating community post for author: ${authorId}`);
   const userDoc = await db.collection('users').doc(authorId).get();
-  if (!userDoc.exists) throw new Error('Author not found');
+  if (!userDoc.exists) {
+    console.error(`❌ Author not found in users collection: ${authorId}`);
+    console.error(`   Attempted lookup: users/${authorId}`);
+    throw new Error(`Author not found: ${authorId}`);
+  }
   
   const userData = userDoc.data();
   const now = admin.firestore.Timestamp.now();
@@ -41,9 +46,21 @@ async function createPost(postData) {
     savedBy: [],
     isTrending: false,
     isFeatured: false,
+    isPublic: true,  // CRITICAL: Posts must be public to appear in feed
     createdAt: now,
     updatedAt: now
   };
+
+  console.log('📝 Creating post with data:', JSON.stringify({
+    authorId: post.authorId,
+    authorName: post.authorName,
+    title: post.title,
+    type: post.type,
+    isPublic: post.isPublic,
+    likesCount: post.likesCount,
+    images: post.images?.length || 0,
+    tags: post.tags
+  }, null, 2));
 
   // Create the post
   const postRef = db.collection('community_posts').doc();

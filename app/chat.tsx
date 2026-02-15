@@ -153,7 +153,8 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
       addThinkingMessage();
     }
     
-    const userId = 'demo-user-id';
+    // Use actual Firebase UID from auth, fallback to demo mode if not authenticated
+    const userId = user?.uid || 'demo-user-id';
     const requestBody = {
       prompt: userMessage,
       userId,
