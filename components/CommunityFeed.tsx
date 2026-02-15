@@ -137,6 +137,7 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
   };
 
   const formatNumber = (num: number): string => {
+    if (num == null) return '0';
     if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
     return num.toString();
   };
@@ -256,8 +257,8 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
   const [editContent, setEditContent] = useState(post.content);
   const [saving, setSaving] = useState(false);
   
-  const isLiked = post.likedBy.includes(userId);
-  const isSaved = post.savedBy.includes(userId);
+  const isLiked = post.likedBy?.includes(userId) ?? false;
+  const isSaved = post.savedBy?.includes(userId) ?? false;
   const isOwnPost = post.authorId === userId;
   
   const typeColors: Record<PostType, string> = {
@@ -400,7 +401,7 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
           )}
           <View style={styles.ratingContainer}>
             <AntDesign name="star" size={14} color="#f59e0b" />
-            <Text style={styles.ratingValue}>{post.rating.toFixed(1)}</Text>
+            <Text style={styles.ratingValue}>{(post.rating ?? 0).toFixed(1)}</Text>
           </View>
         </View>
       </View>
@@ -410,7 +411,7 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
       <Text style={styles.postContent}>{post.content}</Text>
 
       {/* Post Image Placeholder */}
-      {post.images.length > 0 ? (
+      {post.images?.length > 0 ? (
         <Image source={{ uri: post.images[0] }} style={styles.postImage} />
       ) : post.type === 'success' || post.type === 'recipe' ? (
         <View style={styles.imagePlaceholder}>
@@ -424,7 +425,7 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
       ) : null}
 
       {/* Tags */}
-      {post.tags.length > 0 && (
+      {post.tags?.length > 0 && (
         <View style={styles.tagsRow}>
           {post.tags.slice(0, 4).map((tag, i) => (
             <View key={i} style={styles.tag}>
