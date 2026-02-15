@@ -43,29 +43,55 @@ export default function EditProfileScreen() {
   // ScrollView ref for scrolling to sections
   const scrollViewRef = useRef<ScrollView>(null);
   
+  // Track if we've initialized from global profile
+  const hasInitialized = useRef(false);
+  
   // Section Y positions for scroll-to functionality
   const [sectionPositions, setSectionPositions] = useState<{ dietary: number; allergies: number }>({
     dietary: 0,
     allergies: 0,
   });
   
-  // Local state for editing - initialized from global profile
+  // Local state for editing - start with empty, will be populated by useEffect
   const [profile, setProfile] = useState<UserProfile>({
-    ...globalProfile,
-    customDietaryText: globalProfile.customDietaryText || '',
-    customAllergyText: globalProfile.customAllergyText || '',
+    displayName: '',
+    bio: '',
+    photoURL: null,
+    dietaryPreferences: [],
+    allergies: [],
+    cookingLevel: 'Beginner',
+    customDietaryText: '',
+    customAllergyText: '',
   });
 
   // Sync local state when global profile loads
+  // Uses individual field dependencies to ensure sync when data actually changes
   useEffect(() => {
-    if (!contextLoading) {
+    if (!contextLoading && !hasInitialized.current) {
+      console.log('[EditProfile] Initializing from global profile:', {
+        displayName: globalProfile.displayName,
+        bio: globalProfile.bio,
+        dietaryPreferences: globalProfile.dietaryPreferences,
+        allergies: globalProfile.allergies,
+        cookingLevel: globalProfile.cookingLevel,
+      });
       setProfile({
         ...globalProfile,
         customDietaryText: globalProfile.customDietaryText || '',
         customAllergyText: globalProfile.customAllergyText || '',
       });
+      hasInitialized.current = true;
     }
-  }, [globalProfile, contextLoading]);
+  }, [contextLoading, globalProfile.displayName, globalProfile.bio, globalProfile.photoURL, 
+      globalProfile.dietaryPreferences, globalProfile.allergies, globalProfile.cookingLevel,
+      globalProfile.customDietaryText, globalProfile.customAllergyText]);
+  
+  // Reset initialization flag if global profile significantly changes (e.g., user logout/login)
+  useEffect(() => {
+    return () => {
+      hasInitialized.current = false;
+    };
+  }, []);
   
   // Handle scroll-to when coming from Settings with a section param
   useEffect(() => {
@@ -313,8 +339,9 @@ export default function EditProfileScreen() {
         <View 
           style={styles.inputSection}
           onLayout={(e: LayoutChangeEvent) => {
-            if (e?.nativeEvent?.layout) {
-              setSectionPositions(prev => ({ ...prev, dietary: e.nativeEvent.layout.y }));
+            const y = e.nativeEvent?.layout?.y;
+            if (y != null) {
+              setSectionPositions(prev => ({ ...prev, dietary: y }));
             }
           }}
         >
@@ -365,8 +392,9 @@ export default function EditProfileScreen() {
         <View 
           style={styles.inputSection}
           onLayout={(e: LayoutChangeEvent) => {
-            if (e?.nativeEvent?.layout) {
-              setSectionPositions(prev => ({ ...prev, allergies: e.nativeEvent.layout.y }));
+            const y = e.nativeEvent?.layout?.y;
+            if (y != null) {
+              setSectionPositions(prev => ({ ...prev, allergies: y }));
             }
           }}
         >

@@ -1,14 +1,53 @@
 // contexts/UserContext.tsx - Global user state management
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth.service';
 import userService from '../services/userService';
 import statsService from '../services/statsService';
 import { isDemoMode, DEMO_USER_ID } from '../config/firebase';
+import { useAuth } from './AuthContext';
 
 // Storage keys
 const PROFILE_KEY = '@cheffy_user_profile';
 const STATS_KEY = '@kainai_user_stats';
+
+// Valid options for normalization (must match UI options in edit-profile.tsx)
+const VALID_DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Halal', 'Kosher'];
+const VALID_ALLERGY_OPTIONS = ['Nuts', 'Shellfish', 'Eggs', 'Soy', 'Wheat', 'Fish', 'Sesame'];
+const VALID_COOKING_LEVELS = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
+
+/**
+ * Normalize dietary preferences/allergies to match UI options (title case)
+ * Filters out 'none' values and empty strings
+ */
+const normalizePreferences = (prefs: string[], validOptions: string[]): string[] => {
+  if (!Array.isArray(prefs)) return [];
+  return prefs
+    .filter(p => p && p.toLowerCase() !== 'none')
+    .map(pref => {
+      // Find matching option (case-insensitive)
+      const match = validOptions.find(opt => opt.toLowerCase() === pref.toLowerCase());
+      return match || pref; // Return matched option or original if no match
+    });
+};
+
+/**
+ * Normalize cooking level from cooking_skills array or level string
+ */
+const normalizeCookingLevel = (cookingSkills: string[] | undefined, level: string | undefined): string => {
+  // First try cooking_skills array (user-selected during onboarding)
+  if (Array.isArray(cookingSkills) && cookingSkills.length > 0) {
+    const skill = cookingSkills[0];
+    const match = VALID_COOKING_LEVELS.find(opt => opt.toLowerCase() === skill.toLowerCase());
+    if (match) return match;
+  }
+  // Fallback to level field (XP-based or stored level)
+  if (level) {
+    const match = VALID_COOKING_LEVELS.find(opt => opt.toLowerCase() === level.toLowerCase());
+    if (match) return match;
+  }
+  return 'Beginner';
+};
 
 // User profile interface
 export interface UserProfile {
@@ -135,23 +174,14 @@ export function UserProvider({ children }: UserProviderProps) {
   const [stats, setStatsState] = useState<UserStats>(DEFAULT_STATS);
   const [uid, setUid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Get auth user from AuthContext to watch for login state changes
+  const { user: authUser, loading: authLoading } = useAuth();
+  
+  // Track if we've loaded for the current user to avoid redundant loads
+  const loadedForUid = useRef<string | null>(null);
 
-  // Load profile and stats on mount
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  // Load all data
-  const loadAll = useCallback(async () => {
-    try {
-      setLoading(true);
-      await Promise.all([loadProfile(), loadStats()]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Load stats from AsyncStorage
+  // Load stats from AsyncStorage - defined first so loadAll can reference it
   const loadStats = useCallback(async () => {
     try {
       const stored = await AsyncStorage.getItem(STATS_KEY);
@@ -169,67 +199,116 @@ export function UserProvider({ children }: UserProviderProps) {
     }
   }, []);
 
-  // Load profile from AsyncStorage and Firestore
+  // Load profile from AsyncStorage and Firestore - defined before loadAll
   const loadProfile = useCallback(async () => {
+    console.log('[UserContext] ========== loadProfile STARTED ==========');
+    console.log('[UserContext] authUser from context:', authUser?.uid || 'null');
+    
     try {
       // Get user from auth service
+      console.log('[UserContext] Step 1: Calling authService.getCurrentGoogleUser()...');
       const user = await authService.getCurrentGoogleUser();
+      console.log('[UserContext] Step 1 COMPLETE: getCurrentGoogleUser returned:', user ? { uid: user.uid, displayName: user.displayName, email: user.email } : 'null');
+      
       if (user) {
         setUid(user.uid);
-        console.log('[UserContext] User UID from auth:', user.uid);
+        console.log('[UserContext] User UID set:', user.uid);
+      } else {
+        console.warn('[UserContext] WARNING: getCurrentGoogleUser returned null but authUser.uid is:', authUser?.uid);
       }
 
       // Always try to fetch fresh data from Firestore if we have a UID
-      if (user?.uid && !isDemoMode(user.uid)) {
-        console.log('[UserContext] Fetching profile from Firestore...');
+      const uidToUse = user?.uid || authUser?.uid;
+      console.log('[UserContext] Step 2: Checking if should fetch from Firestore. uidToUse:', uidToUse, 'isDemoMode:', uidToUse ? isDemoMode(uidToUse) : 'N/A');
+      
+      if (uidToUse && !isDemoMode(uidToUse)) {
+        console.log('[UserContext] Step 3: Fetching profile from Firestore for UID:', uidToUse);
         try {
-          const firestoreUser = await userService.getUser(user.uid);
-          if (firestoreUser && firestoreUser.displayName) {
-            console.log('[UserContext] Got displayName from Firestore:', firestoreUser.displayName);
+          console.log('[UserContext] Step 3a: Calling userService.getUser()...');
+          const firestoreUser = await userService.getUser(uidToUse);
+          console.log('[UserContext] Step 3b: userService.getUser() returned:', firestoreUser ? 'Object with keys: ' + Object.keys(firestoreUser).join(', ') : 'null/undefined');
+          
+          // FIX: Check for firestoreUser existence, not displayName (displayName can be empty)
+          if (firestoreUser) {
+            console.log('[UserContext] Got Firestore user data:', firestoreUser.displayName);
+            console.log('[UserContext] Raw Firestore data - dietary_preferences:', firestoreUser.dietary_preferences, 'dietary_allergies:', firestoreUser.dietary_allergies, 'cooking_skills:', firestoreUser.cooking_skills);
             const firestoreProfile: UserProfile = {
               displayName: firestoreUser.displayName || '',
               bio: firestoreUser.bio || '',
               photoURL: firestoreUser.photoURL || null,
-              dietaryPreferences: firestoreUser.dietary_preferences || [],
-              allergies: firestoreUser.dietary_allergies || [],
-              cookingLevel: firestoreUser.level || 'Beginner',
+              dietaryPreferences: normalizePreferences(firestoreUser.dietary_preferences || [], VALID_DIETARY_OPTIONS),
+              allergies: normalizePreferences(firestoreUser.dietary_allergies || [], VALID_ALLERGY_OPTIONS),
+              cookingLevel: normalizeCookingLevel(firestoreUser.cooking_skills, firestoreUser.level),
               customDietaryText: firestoreUser.dietary_custom || '',
               customAllergyText: firestoreUser.allergy_custom || '',
             };
+            console.log('[UserContext] Normalized profile - dietaryPreferences:', firestoreProfile.dietaryPreferences, 'allergies:', firestoreProfile.allergies, 'cookingLevel:', firestoreProfile.cookingLevel);
+            
+            // FIX: Always call setProfileState when we have Firestore data
+            console.log('[UserContext] Step 4: About to call setProfileState with Firestore data...');
             setProfileState(firestoreProfile);
+            console.log('[UserContext] Step 4 COMPLETE: setProfileState called with Firestore data');
+            
             // Also save to AsyncStorage for offline access
+            console.log('[UserContext] Step 5: Saving to AsyncStorage...');
             await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(firestoreProfile));
-            console.log('[UserContext] Profile synced from Firestore, displayName:', firestoreProfile.displayName);
+            console.log('[UserContext] Step 5 COMPLETE: Profile synced from Firestore, displayName:', firestoreProfile.displayName);
+            console.log('[UserContext] ========== loadProfile FINISHED (Firestore path) ==========');
             return; // Successfully loaded from Firestore
+          } else {
+            console.log('[UserContext] firestoreUser is null/undefined, falling back to local storage');
           }
         } catch (firestoreError) {
-          console.error('[UserContext] Failed to fetch from Firestore, falling back to local:', firestoreError);
+          console.error('[UserContext] ERROR in Firestore fetch:', firestoreError);
+          console.error('[UserContext] Error name:', (firestoreError as Error).name);
+          console.error('[UserContext] Error message:', (firestoreError as Error).message);
+          console.error('[UserContext] Error stack:', (firestoreError as Error).stack);
+          console.log('[UserContext] Falling back to local storage...');
         }
+      } else {
+        console.log('[UserContext] Skipping Firestore fetch - no UID or demo mode');
       }
 
       // Fallback: Load stored profile from AsyncStorage
+      console.log('[UserContext] Step 6: Loading from AsyncStorage fallback...');
       const stored = await AsyncStorage.getItem(PROFILE_KEY);
+      console.log('[UserContext] AsyncStorage PROFILE_KEY exists:', !!stored);
+      
       if (stored) {
         const parsedProfile = JSON.parse(stored);
         console.log('[UserContext] Loaded profile from AsyncStorage, displayName:', parsedProfile.displayName);
         // Handle both snake_case (from onboarding) and camelCase (legacy) formats
+        const rawDietaryPrefs = parsedProfile.dietary_preferences || parsedProfile.dietaryPreferences || [];
+        const rawAllergies = parsedProfile.dietary_allergies || parsedProfile.allergies || [];
+        const rawCookingSkills = parsedProfile.cooking_skills || parsedProfile.cookingLevel;
+        
         const normalizedProfile: UserProfile = {
           displayName: parsedProfile.displayName || '',
           bio: parsedProfile.bio || '',
           photoURL: parsedProfile.photoURL || null,
-          dietaryPreferences: parsedProfile.dietary_preferences || parsedProfile.dietaryPreferences || [],
-          allergies: parsedProfile.dietary_allergies || parsedProfile.allergies || [],
-          cookingLevel: parsedProfile.cooking_skills || parsedProfile.cookingLevel || 'Beginner',
+          dietaryPreferences: normalizePreferences(Array.isArray(rawDietaryPrefs) ? rawDietaryPrefs : [], VALID_DIETARY_OPTIONS),
+          allergies: normalizePreferences(Array.isArray(rawAllergies) ? rawAllergies : [], VALID_ALLERGY_OPTIONS),
+          cookingLevel: normalizeCookingLevel(
+            Array.isArray(rawCookingSkills) ? rawCookingSkills : undefined,
+            typeof rawCookingSkills === 'string' ? rawCookingSkills : undefined
+          ),
           customDietaryText: parsedProfile.customDietaryText || '',
           customAllergyText: parsedProfile.customAllergyText || '',
         };
+        console.log('[UserContext] Step 6a: About to call setProfileState with AsyncStorage data...');
         setProfileState(normalizedProfile);
+        console.log('[UserContext] Step 6a COMPLETE: setProfileState called with AsyncStorage data');
+        console.log('[UserContext] ========== loadProfile FINISHED (AsyncStorage path) ==========');
       } else {
         // Try to migrate from legacy onboarding format
+        console.log('[UserContext] Step 7: No stored profile, checking for legacy format...');
         const legacyProfile = await AsyncStorage.getItem('profile');
+        console.log('[UserContext] Legacy profile exists:', !!legacyProfile);
+        
         if (legacyProfile) {
           try {
             const legacy = JSON.parse(legacyProfile);
+            console.log('[UserContext] Migrating legacy profile:', legacy);
             // Convert legacy format { name, prefs, allergies, level } to UserProfile
             const prefsArray = legacy.prefs === 'None' || !legacy.prefs 
               ? [] 
@@ -253,22 +332,76 @@ export function UserProvider({ children }: UserProviderProps) {
             await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(migratedProfile));
             setProfileState(migratedProfile);
             console.log('[UserContext] Migrated legacy profile, displayName:', migratedProfile.displayName);
+            console.log('[UserContext] ========== loadProfile FINISHED (Legacy migration path) ==========');
           } catch (parseError) {
             console.error('[UserContext] Error migrating legacy profile:', parseError);
           }
-        } else if (user?.displayName) {
-          // Initialize with auth display name if no stored profile
-          console.log('[UserContext] Using auth displayName:', user.displayName);
-          setProfileState(prev => ({
-            ...prev,
-            displayName: user.displayName,
-          }));
+        } else {
+          // Use authUser from context or user from getCurrentGoogleUser
+          const fallbackUser = user || authUser;
+          console.log('[UserContext] Step 8: No stored profile, checking fallback user displayName:', fallbackUser?.displayName);
+          
+          if (fallbackUser?.displayName) {
+            // Initialize with auth display name if no stored profile
+            console.log('[UserContext] Using auth displayName:', fallbackUser.displayName);
+            setProfileState(prev => ({
+              ...prev,
+              displayName: fallbackUser.displayName,
+            }));
+            console.log('[UserContext] ========== loadProfile FINISHED (Auth displayName path) ==========');
+          } else {
+            console.log('[UserContext] ========== loadProfile FINISHED (No profile found) ==========');
+          }
         }
       }
     } catch (error) {
-      console.error('[UserContext] Error loading user profile:', error);
+      console.error('[UserContext] ========== loadProfile FATAL ERROR ==========');
+      console.error('[UserContext] Error:', error);
+      console.error('[UserContext] Error name:', (error as Error).name);
+      console.error('[UserContext] Error message:', (error as Error).message);
+      console.error('[UserContext] Error stack:', (error as Error).stack);
     }
-  }, []);
+  }, [authUser]);
+
+  // Load all data - now loadProfile and loadStats are defined before this
+  const loadAll = useCallback(async () => {
+    try {
+      setLoading(true);
+      await Promise.all([loadProfile(), loadStats()]);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadProfile, loadStats]);
+
+  // Watch for auth user changes and trigger loadProfile when user logs in
+  // This is the key fix: when user state changes from null to an object, load profile
+  useEffect(() => {
+    // Wait for auth to finish loading
+    if (authLoading) {
+      console.log('[UserContext] Auth still loading, waiting...');
+      return;
+    }
+
+    const currentUid = authUser?.uid || null;
+    
+    // If user logged in (or changed), and we haven't loaded for this user yet
+    if (currentUid && loadedForUid.current !== currentUid) {
+      console.log('[UserContext] User logged in, triggering loadProfile for UID:', currentUid);
+      loadedForUid.current = currentUid;
+      loadAll();
+    } else if (!currentUid && loadedForUid.current !== null) {
+      // User logged out - reset state
+      console.log('[UserContext] User logged out, resetting profile state');
+      loadedForUid.current = null;
+      setProfileState(DEFAULT_PROFILE);
+      setStatsState(DEFAULT_STATS);
+      setUid(null);
+      setLoading(false);
+    } else if (!currentUid && loadedForUid.current === null) {
+      // No user and we've already acknowledged no user - just ensure loading is false
+      setLoading(false);
+    }
+  }, [authUser, authLoading, loadAll]);
 
   // Update profile (partial update)
   const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
