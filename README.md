@@ -38,6 +38,4 @@ The project recently underwent a major directory reorganization to improve scala
 We prioritize user data safety. Our **Health & Nutrition** and **Data Sharing** disclosures are explicitly integrated into the app with bolded legal constraints to ensure transparency regarding AI estimates and public posting.
 
 ## 🚧 Known Issues (In Progress)
-- **Firebase Sync:** Integrating Firestore as the primary source of truth over AsyncStorage.
 - **Auth:** Resolving Google Sign-In initialization bugs.
-- **Dynamic Avatars:** Implementing letter-based placeholders for new
