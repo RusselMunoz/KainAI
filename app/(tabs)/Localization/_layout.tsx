@@ -1,4 +1,4 @@
-// app/(tabs)/Localization/_layout.tsx
+// app/(tabs)/localization/_layout.tsx
 import { Stack } from 'expo-router';
 
 export default function LocalizationLayout() {

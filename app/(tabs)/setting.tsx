@@ -26,35 +26,66 @@ const SECTIONS = [
   {
     title: 'PROFILE & HEALTH',
     items: [
-      { key: 'edit-profile', label: 'Edit Profile' },
-      { key: 'allergies', label: 'Allergies and Dietary Preferences' },
+      { key: 'edit-profile',
+        label: 'Edit Profile',
+        sublabel: 'Update your personal information and preferences',
+        icon: 'user'},
+      { key: 'allergies', 
+        label: 'Allergies and Dietary Preferences',
+        sublabel: 'Manage your allergies and dietary restrictions',
+        icon: 'alert-triangle'},
     ],
   },
   {
     title: 'PRIVACY & DATA',
     items: [
-      { key: 'data-sharing', label: 'Data Sharing' },
-      { key: 'health-data', label: 'Health Data' },
+      { key: 'data-sharing', 
+        label: 'Data Sharing',
+        sublabel: 'Control how your data is shared and used',
+        icon: 'shield'
+       },
+      { key: 'health-data',
+        label: 'Health Data',
+        sublabel: 'Manage your health data and permissions',
+        icon: 'heart'
+       },
     ],
   },
   {
     title: 'LOCALIZATION',
-    items: [{ key: 'language', label: 'Language' }],
+    items: [{ key: 'language',
+              label: 'Language',
+              sublabel: 'Select your preferred language',
+              icon: 'globe' }],
   },
   {
     title: 'COMMUNITY',
     items: [
-      { key: 'leaderboard', label: 'Leaderboard' },
-      { key: 'badges', label: 'Badges' },
-      { key: 'community', label: 'Community' },
+      { key: 'leaderboard', 
+        label: 'Leaderboard',
+        sublabel: 'View your ranking in the community',
+        icon: 'award' },
+      { key: 'community', 
+        label: 'Community', 
+        sublabel: 'Connect with other users',
+        icon: 'users' },
     ],
   },
   {
     title: 'LEGAL & INFO SECTION',
     items: [
-      { key: 'privacy-policy', label: 'Privacy Policy' },
-      { key: 'terms', label: 'Terms & Conditions / Terms of Service' },
-      { key: 'licenses', label: 'Licenses / Acknowledgments' },
+      { key: 'privacy-policy', 
+        label: 'Privacy Policy',
+        sublabel: 'View our privacy policy and data usage guidelines',
+        icon: 'lock' },
+      { key: 'terms', 
+        label: 'Terms & Conditions / Terms of Service',
+        sublabel: 'View our terms and conditions',
+        icon: 'file-text' },
+      { key: 'licenses', 
+        label: 'Licenses / Acknowledgments', 
+        sublabel: 'View our licenses and acknowledgements',
+        icon: 'book-open' },
     ],
   },
 ];
@@ -81,12 +112,21 @@ export default function SettingsScreen() {
       console.log('[Settings] AuthContext.signOut result:', authResult);
 
       if (!serviceResult.success || !authResult.success) {
-        Alert.alert('Sign Out Failed', serviceResult.error || authResult.error || 'Please try again.');
+        Alert.alert('Sign Out Failed', String(serviceResult.error || authResult.error || 'Please try again.'));
         return;
       }
 
-      await AsyncStorage.multiRemove(AUTH_STORAGE_KEYS);
-      console.log('[Settings] Cleared AsyncStorage keys:', AUTH_STORAGE_KEYS.join(', '));
+      try {
+        await AsyncStorage.multiRemove(AUTH_STORAGE_KEYS);
+        console.log('[Settings] Cleared AsyncStorage keys:', AUTH_STORAGE_KEYS.join(', '));
+      } catch (error) {
+        console.error('[Settings] Failed to clear auth AsyncStorage keys:', error);
+        // We still proceed after sign-out, but surface that local storage may be stale
+        Alert.alert(
+          'Sign Out',
+          'You have been signed out, but some local sign-in data may not have been fully cleared.'
+        );
+      }
 
       router.replace('/Login');
     } catch (error: any) {
@@ -132,7 +172,7 @@ export default function SettingsScreen() {
     }
     // Navigate to language settings placeholder
     if (key === 'language') {
-      router.push('/Localization/language');
+      router.push({ pathname: '/Localization/language' });
       return;
     }
     // Default: just log
@@ -166,20 +206,22 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Debug button - easy access to test all screens */}
-        <Pressable
-          style={{
-            backgroundColor: '#e74c3c',
-            padding: 16,
-            borderRadius: 12,
-            marginBottom: 20,
-            alignItems: 'center',
-          }}
-          onPress={() => router.push('/debug')}>
-          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
-            🧪 Debug - Test All Screens
-          </Text>
-        </Pressable>
+        {/* Debug button - easy access to test all screens - only in dev */}
+        {__DEV__ && (
+          <Pressable
+            style={{
+              backgroundColor: '#e74c3c',
+              padding: 16,
+              borderRadius: 12,
+              marginBottom: 20,
+              alignItems: 'center',
+            }}
+            onPress={() => router.push('/debug')}>
+            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
+              🧪 Debug - Test All Screens
+            </Text>
+          </Pressable>
+        )}
 
         {SECTIONS.map((section) => (
           <View key={section.title} style={styles.section}>

@@ -260,8 +260,8 @@ app.post('/api/add-user', async (req, res) => {
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const db = admin.firestore();
-    // Query users for XP data
-    const snapshot = await db.collection('users')
+    // Query user_stats for XP data (correct source of truth)
+    const snapshot = await db.collection('user_stats')
       .limit(50)
       .get();
 
@@ -281,10 +281,17 @@ app.get('/api/leaderboard', async (req, res) => {
         console.warn(`Error fetching user ${uid} for leaderboard:`, e.message);
       }
 
-      return { uid, displayName, xp: stats.xp || 0, level: stats.level || 1, recipesCompleted: stats.recipesCompleted || 0 };
+      return { 
+        uid, 
+        displayName, 
+        xp: stats.xp || 0, 
+        level: stats.level || 1, 
+        recipesCompleted: stats.recipesCompleted || 0 
+      };
     }));
 
-    leaderboard.sort((a, b) => (b.xp || 0) - (a.xp || 0)); // Sort after fetching to include users without XP field
+    // Sort by XP descending in JavaScript
+    leaderboard.sort((a, b) => (b.xp || 0) - (a.xp || 0));
 
     return res.json({ ok: true, leaderboard });
   } catch (err) {

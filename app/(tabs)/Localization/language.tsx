@@ -1,4 +1,4 @@
-// app/(tabs)/Localization/language.tsx
+// app/(tabs)/localization/language.tsx
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 
