@@ -75,7 +75,7 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
       .then(r => r.json())
       .then(data => {
         console.log('[LB] response:', JSON.stringify(data).slice(0, 200));
-        const users = data.users || data.leaderboard || (Array.isArray(data) ? data : []);
+        const users = data.leaderboard || data.users || (Array.isArray(data) ? data : []);
         setLbUsers(users);
       })
       .catch(() => {});

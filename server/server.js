@@ -256,6 +256,43 @@ app.post('/api/add-user', async (req, res) => {
   }
 });
 
+// Get leaderboard (top 50 by XP)
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const db = admin.firestore();
+    // Query users for XP data
+    const snapshot = await db.collection('users')
+      .limit(50)
+      .get();
+
+    let leaderboard = await Promise.all(snapshot.docs.map(async (doc) => {
+      const stats = doc.data();
+      const uid = doc.id;
+      let displayName = 'Anonymous';
+      
+      try {
+        // Join with users collection for display name
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          displayName = userData.displayName || userData.username || 'Anonymous';
+        }
+      } catch (e) {
+        console.warn(`Error fetching user ${uid} for leaderboard:`, e.message);
+      }
+
+      return { uid, displayName, xp: stats.xp || 0, level: stats.level || 1, recipesCompleted: stats.recipesCompleted || 0 };
+    }));
+
+    leaderboard.sort((a, b) => (b.xp || 0) - (a.xp || 0)); // Sort after fetching to include users without XP field
+
+    return res.json({ ok: true, leaderboard });
+  } catch (err) {
+    console.error('Leaderboard error:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 
 if (!API_KEY) {
   console.warn('GROQ_API_KEY not set. Set process.env.GROQ_API_KEY before starting the server.');
