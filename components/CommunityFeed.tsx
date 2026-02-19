@@ -13,10 +13,13 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
+  Share,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Pressable } from 'react-native';
+
 import type { CommunityPost, PostType, CommunityStats, Recipe, Comment } from '../types';
 import communityService from '../services/community.service';
 import recipeService from '../services/recipe.service';
@@ -41,7 +44,16 @@ interface CommunityFeedProps {
   onViewRecipe?: (recipeId: string, authorId: string) => void;
 }
 
+type LeaderboardUser = {
+  uid: string;
+  displayName: string;
+  xp: number;
+  level: string;
+  recipesCompleted: number;
+};
+
 export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityFeedProps) {
+  console.log('[CommunityFeed] Component mounted');
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [stats, setStats] = useState<CommunityStats>({ totalMembers: 0, totalRecipes: 0, totalPosts: 0 });
   const [filter, setFilter] = useState<PostType | 'all'>('all');
@@ -49,10 +61,25 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const [lbUsers, setLbUsers] = useState<any[]>([]);
+  const [lbExpanded, setLbExpanded] = useState(false);
+
+  
   useEffect(() => {
     loadFeed();
     loadStats();
   }, [filter]);
+  
+  useEffect(() => {
+    fetch('http://10.0.2.2:5173/api/leaderboard')
+      .then(r => r.json())
+      .then(data => {
+        console.log('[LB] response:', JSON.stringify(data).slice(0, 200));
+        const users = data.users || data.leaderboard || (Array.isArray(data) ? data : []);
+        setLbUsers(users);
+      })
+      .catch(() => {});
+  }, []);
 
   const loadFeed = async () => {
     setLoading(true);
@@ -108,9 +135,14 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
 
       // Show feedback
       if (result.saved) {
+        const savedPost = posts.find(p => p.id === postId);
+        const isRecipe = savedPost?.type === 'recipe';
+
         Alert.alert(
-          'Recipe Saved!',
-          'This recipe has been saved to your collection.',
+          isRecipe ? 'Recipe Saved!' : 'Post Saved!',
+          isRecipe
+            ? 'This recipe has been saved to your collection.'
+            : 'This post has been saved to your collection.',
           [{ text: 'OK' }]
         );
       }
@@ -173,6 +205,21 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
             </View>
           </View>
         </View>
+      </View>
+
+      {/* Leaderboard Card */}
+      <View style={{ backgroundColor:'#fff', borderRadius:12, margin:12, padding:12, borderLeftWidth:3, borderLeftColor:'#4CAF50' }}>
+        <Text style={{ fontWeight:'bold', fontSize:15, color:'#4CAF50', marginBottom:8 }}>🏆 Top Chefs</Text>
+        {(lbExpanded ? lbUsers : lbUsers.slice(0,3)).map((u, i) => (
+          <View key={u.uid} style={{ flexDirection:'row', justifyContent:'space-between', paddingVertical:4 }}>
+            <Text style={{ color: i===0?'#FFD700': i===1?'#C0C0C0': i===2?'#CD7F32':'#333' }}>#{i+1} {u.displayName}</Text>
+            <Text style={{ color:'#4CAF50' }}>{u.xp} XP</Text>
+          </View>
+        ))}
+        {lbUsers.length === 0 && <Text style={{ color:'#999', textAlign:'center' }}>No rankings yet</Text>}
+        <TouchableOpacity onPress={() => setLbExpanded(e => !e)} style={{ marginTop:8, alignItems:'center' }}>
+          <Text style={{ color:'#4CAF50', fontWeight:'600' }}>{lbExpanded ? 'Show Less ▲' : 'See Full Rankings ▼'}</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
@@ -334,9 +381,14 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
 
   const loadComments = async () => {
     setLoadingComments(true);
-    const fetchedComments = await communityService.getComments(post.id);
-    setComments(fetchedComments);
-    setLoadingComments(false);
+    try {
+      const fetchedComments = await communityService.getComments(post.id);
+      setComments(fetchedComments);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to load comments. Please try again.');
+    } finally {
+      setLoadingComments(false);
+    }
   };
 
   const handleToggleComments = () => {
@@ -355,7 +407,7 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
     if (comment) {
       setComments(prev => [comment, ...prev]);
       setNewComment('');
-      post.commentsCount++; // Update local count
+      onPostUpdated?.({ ...post, commentsCount: post.commentsCount + 1 });
     }
     setSubmittingComment(false);
   };
@@ -373,7 +425,7 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
             const success = await communityService.deleteComment(post.id, commentId, userId);
             if (success) {
               setComments(prev => prev.filter(c => c.id !== commentId));
-              post.commentsCount--; // Update local count
+              onPostUpdated?.({ ...post, commentsCount: Math.max(0, post.commentsCount - 1) });
             }
           },
         },
@@ -541,7 +593,18 @@ function PostCard({ post, userId, onLike, onSave, onSaveToArchive, onViewRecipe,
             />
             {isSaved && <View style={styles.savedIndicator} />}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.engagementBtn}>
+          <TouchableOpacity
+            style={styles.engagementBtn}
+            onPress={async () => {
+              try {
+                await Share.share({
+                  message: `${post.title}\n\n${post.content}`,
+                });
+              } catch (_) {
+                // user cancelled or share failed — no action needed
+              }
+            }}
+          >
             <Feather name="share-2" size={18} color="#666" />
           </TouchableOpacity>
         </View>
@@ -1641,6 +1704,89 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#374151',
+  },
+
+  /* ── Leaderboard preview card ── */
+  lbCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    elevation: 2,
+    borderLeftWidth: 3,
+    borderLeftColor: '#18b66f',
+  },
+  lbCardTitle: {
+    fontWeight: '700',
+    fontSize: 15,
+    color: '#18b66f',
+    marginBottom: 8,
+  },
+  lbRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  lbUserCol: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  lbRank: {
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  lbName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  lbXp: {
+    fontSize: 11,
+    color: '#18b66f',
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  lbExpandedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
+    borderRadius: 4,
+  },
+  lbExpandedRowHighlight: {
+    backgroundColor: '#e6fff0',
+    borderLeftColor: '#18b66f',
+  },
+  lbYourRank: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 2,
+    borderTopColor: '#18b66f',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  lbYourRankLabel: {
+    fontWeight: '700',
+    fontSize: 13,
+    color: '#18b66f',
+  },
+  lbYourRankValue: {
+    fontWeight: '600',
+    fontSize: 13,
+    color: '#333',
+  },
+  lbExpandBtn: {
+    alignSelf: 'center',
+    marginTop: 6,
+    padding: 4,
   },
 });
 
