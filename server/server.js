@@ -387,8 +387,8 @@ app.post('/api/chat', async (req, res) => {
       const recommendationPrompt = `Based on these ingredients: ${ingredientList?.join(', ')}, suggest 3-5 complementary ingredients that would work well together.
 
 User dietary constraints:
-- Preferences: ${userData.dietary_preferences?.join(', ') || 'None'}
-- Allergies to avoid: ${userData.dietary_allergies?.join(', ') || 'None'}
+- Preferences: ${(Array.isArray(userData.dietary_preferences) ? userData.dietary_preferences.join(', ') : userData.dietary_preferences) || 'None'}${userData.dietary_custom ? ` (Custom: ${userData.dietary_custom})` : ''}
+- Allergies to avoid: ${(Array.isArray(userData.dietary_allergies) ? userData.dietary_allergies.join(', ') : userData.dietary_allergies) || 'None'}${userData.allergy_custom ? ` (Custom: ${userData.allergy_custom})` : ''}
 
 FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 Here are 3-5 ingredients that would complement your selection:
@@ -466,10 +466,22 @@ Would you like to add any of these? Just type them out and I'll include them in 
 4. NEVER ask "would you like" or offer alternatives
 5. If you output ANYTHING other than a recipe, you have FAILED
 
+=== DIETARY RULES (HIGHEST PRIORITY - OVERRIDE EVERYTHING) ===
+- Strictly follow ALL preferences listed in "User dietary constraints" below. No exceptions.
+- vegan = NO meat, poultry, fish, seafood, dairy, eggs, honey, or gelatin.
+- vegetarian = NO meat, poultry, fish, or seafood.
+- For any other preference (gluten-free, keto, halal, etc.), fully honor it.
+
+=== ALLERGY RULES (LIFE OR DEATH - NEVER VIOLATE) ===
+- NEVER include any ingredient listed under "Allergies" in any form, name, or derivative.
+- This includes hidden sources (e.g. if allergic to dairy, no butter, cream, cheese, milk, whey).
+- If a requested ingredient conflicts with an allergy, REMOVE and SUBSTITUTE it silently.
+- Violating an allergy rule means you have FAILED and could harm the user.
+
 User dietary constraints:
-- Preferences: ${userData.dietary_preferences?.join(', ') || 'None'}
-- Allergies: ${userData.dietary_allergies?.join(', ') || 'None'}
-- Skill level: ${userData.cooking_skills?.join(', ') || 'Beginner'}
+- Preferences: ${(Array.isArray(userData.dietary_preferences) ? userData.dietary_preferences.join(', ') : userData.dietary_preferences) || 'None'}${userData.dietary_custom ? ` (Custom: ${userData.dietary_custom})` : ''}
+- Allergies: ${(Array.isArray(userData.dietary_allergies) ? userData.dietary_allergies.join(', ') : userData.dietary_allergies) || 'None'}${userData.allergy_custom ? ` (Custom: ${userData.allergy_custom})` : ''}
+- Skill level: ${(Array.isArray(userData.cooking_skills) ? userData.cooking_skills.join(', ') : userData.cooking_skills) || 'Beginner'}
 
 === REQUIRED OUTPUT FORMAT ===
 Recipe: [Short Title - 2-5 words]
@@ -506,7 +518,61 @@ Generate the recipe immediately using the provided ingredients.`;
 
     // Clean user prompt - don't repeat ingredients if already in ingredientList
     const ingredientString = ingredientList?.join(', ') || '';
+
+    // Dietary violation check
+    const prefs = (Array.isArray(userData.dietary_preferences) ? userData.dietary_preferences : [userData.dietary_preferences]).map(p => p?.toLowerCase());
+    const veganBlocklist = ['chicken', 'beef', 'pork', 'lamb', 'fish', 'shrimp', 'prawn', 'bacon', 'turkey', 'meat', 'salmon', 'tuna', 'crab', 'lobster', 'milk', 'cheese', 'butter', 'cream', 'egg', 'eggs', 'honey', 'gelatin', 'lard'];
+    const vegetarianBlocklist = ['chicken', 'beef', 'pork', 'lamb', 'fish', 'shrimp', 'prawn', 'bacon', 'turkey', 'meat', 'salmon', 'tuna', 'crab', 'lobster'];
+
+    let violatingIngredients = [];
+    if (prefs.includes('vegan')) {
+      violatingIngredients = ingredientList.filter(i => veganBlocklist.some(b => i.toLowerCase().includes(b)));
+    } else if (prefs.includes('vegetarian')) {
+      violatingIngredients = ingredientList.filter(i => vegetarianBlocklist.some(b => i.toLowerCase().includes(b)));
+    }
+
+    // Check allergies
+    const allergies = (Array.isArray(userData.dietary_allergies) ? userData.dietary_allergies : [userData.dietary_allergies])
+      .map(a => a?.toLowerCase())
+      .filter(a => a && a !== 'none');
+
+    if (allergies.length > 0) {
+      const allergyViolations = ingredientList.filter(i => allergies.some(a => i.toLowerCase().includes(a)));
+      if (allergyViolations.length > 0) {
+        violatingIngredients = [...new Set([...violatingIngredients, ...allergyViolations])];
+      }
+    }
+
+    if (violatingIngredients.length > 0) {
+      const prefViolations = violatingIngredients.filter(i =>
+        prefs.includes('vegan') ? veganBlocklist.some(b => i.toLowerCase().includes(b)) :
+        prefs.includes('vegetarian') ? vegetarianBlocklist.some(b => i.toLowerCase().includes(b)) : false
+      );
+      const allergyViolations = violatingIngredients.filter(i => !prefViolations.includes(i));
+
+      let reason = '';
+      if (prefViolations.length > 0 && allergyViolations.length > 0) {
+        reason = `dietary preferences (${userData.dietary_preferences.join(', ')}) and allergies (${allergyViolations.join(', ')})`;
+      } else if (allergyViolations.length > 0) {
+        reason = `allergies (${allergyViolations.join(', ')})`;
+      } else {
+        reason = `dietary preferences (${userData.dietary_preferences.join(', ')})`;
+      }
+
+      return res.json({
+        ok: true,
+        response: `⚠️ Some of your ingredients (${violatingIngredients.join(', ')}) conflict with your ${reason}. Please provide different ingredients.`,
+        dietaryViolation: true
+      });
+    }
+
+    const dietaryNote = userData.dietary_preferences?.length
+      ? `IMPORTANT: User is ${userData.dietary_preferences.join(', ')}. Replace any non-compliant ingredients with suitable alternatives.`
+      : '';
+
     const userPrompt = `Create a recipe with these ingredients: ${ingredientString}
+
+${dietaryNote}
 
 OUTPUT THE RECIPE NOW. Start with "Recipe:" on line 1.`;
 

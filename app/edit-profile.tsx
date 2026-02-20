@@ -162,6 +162,7 @@ export default function EditProfileScreen() {
       };
       setProfile(normalizedProfile);
       // Update global profile - this propagates to ALL screens
+      console.log('Saving profile:', normalizedProfile);
       await setGlobalProfile(normalizedProfile);
       Alert.alert('Success', 'Profile updated successfully!', [
         { text: 'OK', onPress: () => router.back() }

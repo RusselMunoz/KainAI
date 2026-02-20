@@ -442,33 +442,37 @@ export function UserProvider({ children }: UserProviderProps) {
 
   // Set complete profile (replaces existing)
   const setProfile = useCallback(async (newProfile: UserProfile) => {
+    const currentUid = authUser?.uid;
+    console.log('setProfile called, uid:', currentUid, 'newProfile:', newProfile?.displayName);
     try {
       setProfileState(newProfile);
       await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(newProfile));
       
       // Sync with Firebase if user is authenticated
-      if (uid) {
+      if (currentUid) {
+        const firebaseProfile = {
+          displayName: newProfile.displayName ?? '',
+          bio: newProfile.bio,
+          photoURL: newProfile.photoURL,
+          dietary_preferences: newProfile.dietaryPreferences,
+          dietary_allergies: newProfile.allergies,
+          dietary_custom: newProfile.customDietaryText,
+          allergy_custom: newProfile.customAllergyText,
+          level: newProfile.cookingLevel,
+        };
         try {
-          const firebaseProfile = {
-            displayName: newProfile.displayName ?? '',
-            bio: newProfile.bio,
-            photoURL: newProfile.photoURL,
-            dietary_preferences: newProfile.dietaryPreferences,
-            dietary_allergies: newProfile.allergies,
-            dietary_custom: newProfile.customDietaryText,
-            allergy_custom: newProfile.customAllergyText,
-            level: newProfile.cookingLevel,
-          };
-          await userService.updateUser(uid, firebaseProfile);
-        } catch (firebaseError) {
-          console.warn('Failed to sync profile to Firebase (non-blocking):', firebaseError);
+          console.log('Sending to API:', firebaseProfile);
+          await userService.updateUser(currentUid, firebaseProfile);
+          console.log('API update successful');
+        } catch (err) {
+          console.error('API update FAILED:', err);
         }
       }
     } catch (error) {
       console.error('Error setting profile:', error);
       throw error;
     }
-  }, [uid]);
+  }, [authUser]);
 
   // Update stats (partial update) - This triggers re-renders in all subscribed components
   const updateStats = useCallback(async (updates: Partial<UserStats>) => {
