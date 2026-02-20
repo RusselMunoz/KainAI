@@ -32,7 +32,7 @@ import Avatar from '../../components/Avatar';
 import recipeService from '../../services/recipe.service';
 import { useUser } from '../../contexts/UserContext';
 import { useAuth } from '../../contexts/AuthContext';
-import type { Recipe, TabName } from '../../types';
+import type { Recipe, TabName, UserLevel } from '../../types';
 
 // Loading fallback for lazy components
 const LoadingFallback = () => (
@@ -43,6 +43,11 @@ const LoadingFallback = () => (
 
 const TABS = ['Chat', 'Recipes', 'Community', 'Awards'];
 const screenW = Dimensions.get('window').width;
+const API_BASE = Platform.select({
+  android: 'http://10.0.2.2:5173',
+  ios: 'http://localhost:5173',
+  default: 'http://localhost:5173',
+});
 
 // top inset so header won't overlap status HUD
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
@@ -67,11 +72,16 @@ export default function Dashboard() {
   const [completedRating, setCompletedRating] = useState(0);
   
   // User state - using global context for instant sync across screens
-  const { profile, stats } = useUser();
+  const { profile, stats, updateStats } = useUser();
   const { user } = useAuth();
   
   // Use actual Firebase UID from auth, fallback to demo mode if not authenticated
   const userId = user?.uid || DEMO_USER_ID_FALLBACK;
+  const activeUserId = userId;
+
+  const refreshStats = useCallback(async (xp: number, level: UserLevel) => {
+    await updateStats({ xp, level });
+  }, [updateStats]);
   
   // Derived values from context - these update instantly when debug changes them
   const userXP = stats.xp;
@@ -107,11 +117,21 @@ export default function Dashboard() {
     setCompletedRating(rating);
     setShowRecipeDetail(false);
 
-    // Brief delay before showing share prompt
+    // Fetch latest XP from server and refresh header
+    try {
+      const response = await fetch(`${API_BASE}/api/user/${activeUserId}`);
+      const data = await response.json();
+      if (data.ok && data.user) {
+        await refreshStats(data.user.xp, data.user.level as UserLevel);
+      }
+    } catch (e) {
+      // non-blocking
+    }
+
     setTimeout(() => {
       setShowShareModal(true);
     }, 800);
-  }, []);
+  }, [activeUserId, refreshStats]);
 
   // Handle share completion
   const handleShareComplete = useCallback(async () => {
