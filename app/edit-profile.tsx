@@ -53,8 +53,7 @@ export default function EditProfileScreen() {
     allergies: 0,
   });
   
-  // Local state for editing - start with empty, will be populated by useEffect
-  const [profile, setProfile] = useState<UserProfile>({
+  const defaultProfile: UserProfile = {
     displayName: '',
     bio: '',
     photoURL: null,
@@ -63,7 +62,14 @@ export default function EditProfileScreen() {
     cookingLevel: 'Beginner',
     customDietaryText: '',
     customAllergyText: '',
-  });
+  };
+
+  // Local state for editing - initialize from global profile with defaults
+  const [profile, setProfile] = useState<UserProfile>(() => ({
+    ...defaultProfile,
+    ...globalProfile,
+    allergies: globalProfile?.allergies ?? [],
+  }));
 
   // Sync local state when global profile loads
   // Uses individual field dependencies to ensure sync when data actually changes

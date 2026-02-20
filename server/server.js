@@ -385,9 +385,9 @@ app.get('/api/chat', (req, res) => {
 
 // Enhanced /api/chat endpoint for recipe generation with user constraints and confirmation
 app.post('/api/chat', async (req, res) => {
-  console.log('📥 POST /api/chat received:', { prompt: req.body.prompt?.slice(0, 50), userId: req.body.userId, confirmed: req.body.confirmed });
+  console.log('📥 POST /api/chat received:', { prompt: req.body.prompt?.slice(0, 50), userId: req.body.userId, confirmed: req.body.confirmed, allowAlternative: req.body.allowAlternative });
   try {
-    let { prompt, userId, ingredientList, confirmed } = req.body;
+    let { prompt, userId, ingredientList, confirmed, allowAlternative } = req.body;
     const temperature = typeof req.body.temperature === 'number' ? req.body.temperature : 0.7;
     const maxTokens = req.body.maxTokens || 1024;
 
@@ -613,7 +613,10 @@ Generate the recipe immediately using the provided ingredients.`;
       }
     }
 
-    if (violatingIngredients.length > 0) {
+    if (violatingIngredients.length > 0 && !allowAlternative) {
+      const dietaryPrefLabel = Array.isArray(userData.dietary_preferences)
+        ? userData.dietary_preferences.join(', ')
+        : (userData.dietary_preferences || 'dietary preferences');
       const prefViolations = violatingIngredients.filter(i =>
         prefs.includes('vegan') ? veganBlocklist.some(b => i.toLowerCase().includes(b)) :
         prefs.includes('vegetarian') ? vegetarianBlocklist.some(b => i.toLowerCase().includes(b)) : false
@@ -622,27 +625,36 @@ Generate the recipe immediately using the provided ingredients.`;
 
       let reason = '';
       if (prefViolations.length > 0 && allergyViolations.length > 0) {
-        reason = `dietary preferences (${userData.dietary_preferences.join(', ')}) and allergies (${allergyViolations.join(', ')})`;
+        reason = `dietary preferences (${dietaryPrefLabel}) and allergies (${allergyViolations.join(', ')})`;
       } else if (allergyViolations.length > 0) {
         reason = `allergies (${allergyViolations.join(', ')})`;
       } else {
-        reason = `dietary preferences (${userData.dietary_preferences.join(', ')})`;
+        reason = `dietary preferences (${dietaryPrefLabel})`;
       }
 
       return res.json({
         ok: true,
-        response: `⚠️ Some of your ingredients (${violatingIngredients.join(', ')}) conflict with your ${reason}. Please provide different ingredients.`,
-        dietaryViolation: true
+        response: `⚠️ Some of your ingredients (${violatingIngredients.join(', ')}) conflict with your ${reason}. Would you like me to generate a compliant alternative recipe instead?`,
+        dietaryViolation: true,
+        offerAlternative: true,
+        violatingIngredients
       });
     }
 
-    const dietaryNote = userData.dietary_preferences?.length
-      ? `IMPORTANT: User is ${userData.dietary_preferences.join(', ')}. Replace any non-compliant ingredients with suitable alternatives.`
+    const dietaryPrefs = Array.isArray(userData.dietary_preferences)
+      ? userData.dietary_preferences
+      : (userData.dietary_preferences ? [userData.dietary_preferences] : []);
+    const dietaryNote = dietaryPrefs.length
+      ? `IMPORTANT: User is ${dietaryPrefs.join(', ')}. Replace any non-compliant ingredients with suitable alternatives.`
+      : '';
+    const alternativeNote = allowAlternative && violatingIngredients.length > 0
+      ? `IMPORTANT: The user approved substitutions for these conflicting ingredients: ${violatingIngredients.join(', ')}. Substitute compliant alternatives and continue without asking follow-up questions.`
       : '';
 
     const userPrompt = `Create a recipe with these ingredients: ${ingredientString}
 
 ${dietaryNote}
+${alternativeNote}
 
 OUTPUT THE RECIPE NOW. Start with "Recipe:" on line 1.`;
 

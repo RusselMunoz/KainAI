@@ -41,6 +41,7 @@ const DEBUG_MODE = true;
 const MESSAGE_TYPE_CONFIRMATION = 'confirmation';
 const MESSAGE_TYPE_THINKING = 'thinking';
 const MESSAGE_TYPE_ADD_MORE = 'add_more';
+const MESSAGE_TYPE_DIETARY_ALTERNATIVE = 'dietary_alternative';
 
 // Use local server proxy - Android emulator uses 10.0.2.2 to reach localhost
 const API_BASE = Platform.select({
@@ -115,7 +116,10 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   
   // Check if there's an active confirmation message requiring button interaction
   const hasActiveConfirmation = messages.some(
-    m => m.messageType === MESSAGE_TYPE_CONFIRMATION || m.messageType === MESSAGE_TYPE_ADD_MORE
+    m =>
+      m.messageType === MESSAGE_TYPE_CONFIRMATION ||
+      m.messageType === MESSAGE_TYPE_ADD_MORE ||
+      m.messageType === MESSAGE_TYPE_DIETARY_ALTERNATIVE
   );
   
   // Debug: Log when component mounts
@@ -174,12 +178,13 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
     setMessages((prev) => GiftedChat.append(prev, [thinkingMsg]));
   }, []);
 
-  const getBotResponse = useCallback(async (userMessage: string, ingredientList?: string[], confirmed?: boolean) => {
+  const getBotResponse = useCallback(async (userMessage: string, ingredientList?: string[], confirmed?: boolean, allowAlternative?: boolean) => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('🔵 getBotResponse CALLED');
     console.log('   userMessage:', userMessage);
     console.log('   ingredientList:', ingredientList);
     console.log('   confirmed:', confirmed);
+    console.log('   allowAlternative:', allowAlternative);
     
     setIsTyping(true);
     
@@ -195,6 +200,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
       userId: requestUserId,
       ingredientList,
       confirmed,
+      allowAlternative,
       temperature: 0.7,
       maxTokens: 512,
     };
@@ -227,6 +233,24 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         };
         setMessages((previousMessages) =>
           GiftedChat.append(previousMessages, [confirmationMsg]),
+        );
+        return;
+      }
+      if (data.dietaryViolation && data.offerAlternative) {
+        removeThinkingMessage();
+        const alternativeMsg: ExtendedMessage = {
+          _id: Math.random().toString(36).substring(2),
+          text: data.response,
+          createdAt: new Date(),
+          user: { _id: 2, name: 'Cheffy' },
+          messageType: MESSAGE_TYPE_DIETARY_ALTERNATIVE,
+          confirmationData: {
+            prompt: userMessage,
+            ingredientList: ingredientList || [],
+          },
+        };
+        setMessages((previousMessages) =>
+          GiftedChat.append(previousMessages, [alternativeMsg]),
         );
         return;
       }
@@ -532,6 +556,42 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
     }
   }, []);
 
+  const handleDietaryAlternativeChoice = useCallback((messageId: string, confirmationData: { prompt: string; ingredientList: string[] }, choice: 'yes' | 'no') => {
+    setMessages((prev) => prev.filter(m => m._id !== messageId));
+
+    if (choice === 'yes') {
+      const userResponseMsg: ExtendedMessage = {
+        _id: Math.random().toString(36).substring(2),
+        text: 'Yes, generate alternative',
+        createdAt: new Date(),
+        user: { _id: 1, name: 'User' },
+      };
+      setMessages((prev) => GiftedChat.append(prev, [userResponseMsg]));
+
+      getBotResponse(
+        confirmationData.prompt,
+        confirmationData.ingredientList,
+        true,
+        true
+      );
+      return;
+    }
+
+    const userResponseMsg: ExtendedMessage = {
+      _id: Math.random().toString(36).substring(2),
+      text: "No, I'll change ingredients",
+      createdAt: new Date(),
+      user: { _id: 1, name: 'User' },
+    };
+    const promptMsg: ExtendedMessage = {
+      _id: Math.random().toString(36).substring(2),
+      text: 'Okay. Update your ingredient list and I will generate a compliant recipe.',
+      createdAt: new Date(),
+      user: { _id: 2, name: 'Cheffy' },
+    };
+    setMessages((prev) => GiftedChat.append(prev, [userResponseMsg, promptMsg]));
+  }, [getBotResponse]);
+
   // Custom bubble renderer to show Yes/No buttons inside confirmation messages
   const renderBubble = useCallback((props: any) => {
     const { currentMessage } = props;
@@ -603,6 +663,36 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         </View>
       );
     }
+
+    if (currentMessage?.messageType === MESSAGE_TYPE_DIETARY_ALTERNATIVE && currentMessage?.confirmationData) {
+      return (
+        <View style={styles.confirmationBubble}>
+          <Bubble
+            {...props}
+            wrapperStyle={{
+              left: styles.botBubbleWrapper,
+            }}
+            textStyle={{
+              left: styles.botBubbleText,
+            }}
+          />
+          <View style={styles.confirmButtonsColumn}>
+            <TouchableOpacity
+              style={[styles.fullWidthBtn, styles.yesBtn]}
+              onPress={() => handleDietaryAlternativeChoice(currentMessage._id, currentMessage.confirmationData, 'yes')}
+            >
+              <Text style={styles.fullWidthBtnText}>Yes, generate alternative</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.fullWidthBtn, styles.noBtn]}
+              onPress={() => handleDietaryAlternativeChoice(currentMessage._id, currentMessage.confirmationData, 'no')}
+            >
+              <Text style={styles.fullWidthBtnText}>No, I'll change ingredients</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
     
     // Check if this is a thinking message - show with loading animation
     if (currentMessage?.messageType === MESSAGE_TYPE_THINKING) {
@@ -636,7 +726,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         }}
       />
     );
-  }, [handleConfirm, handleAddMoreChoice]);
+  }, [handleConfirm, handleAddMoreChoice, handleDietaryAlternativeChoice]);
 
   return (
     <View style={{ flex: 1 }}>
