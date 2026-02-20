@@ -36,6 +36,7 @@ const formatToPHT = (date: Date): string => {
 
 // DEBUG MODE - set to true for extra logging and test controls
 const DEBUG_MODE = true;
+const SHOW_DEBUG = false;
 
 // Special message types
 const MESSAGE_TYPE_CONFIRMATION = 'confirmation';
@@ -144,7 +145,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
         
         setMessages([{
           _id: 'welcome',
-          text: `✅ Connected! Hello, ${userName}! What ingredients are we working with today? Let's create something amazing together!`,
+          text: `Hello, ${userName}! What ingredients are we working with today? Let's create something amazing together!`,
           createdAt: new Date(),
           user: { _id: 2, name: 'Cheffy' },
         }]);
@@ -731,7 +732,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   return (
     <View style={{ flex: 1 }}>
       {/* Debug controls */}
-      {DEBUG_MODE && (
+      {SHOW_DEBUG && (
         <View style={styles.debugBar}>
           <Text style={styles.debugLabel}>DEBUG MODE</Text>
           <TouchableOpacity style={styles.debugBtn} onPress={quickTest}>

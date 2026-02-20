@@ -172,6 +172,19 @@ export default function SettingsScreen() {
       router.push({ pathname: '/localization/language' });
       return;
     }
+    // Navigate to Community section
+    if (key === 'leaderboard') {
+      router.push('/community_section/leaderboard');
+      return;
+    }
+    if (key === 'community') {
+      router.push('/community_section/community');
+      return;
+    }
+    if (key === 'reward') {
+      router.push('/community_section/rewards');
+      return;
+    }
   };
 
   return (
