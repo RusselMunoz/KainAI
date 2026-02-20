@@ -30,7 +30,6 @@ const ShareSuccessModal = lazy(() => import('../../components/CommunityFeed').th
 // Lightweight components loaded immediately
 import Avatar from '../../components/Avatar';
 import recipeService from '../../services/recipe.service';
-import userStatsService from '../../services/user-stats.service';
 import { useUser } from '../../contexts/UserContext';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Recipe, TabName } from '../../types';
@@ -67,7 +66,7 @@ export default function Dashboard() {
   const [completedRating, setCompletedRating] = useState(0);
   
   // User state - using global context for instant sync across screens
-  const { profile, stats, updateStats } = useUser();
+  const { profile, stats } = useUser();
   const { user } = useAuth();
   
   // Use actual Firebase UID from auth, fallback to demo mode if not authenticated
@@ -101,77 +100,24 @@ export default function Dashboard() {
     loadRecipes();
   }, []);
 
-  // Handle recipe completion - show share modal and award XP
+  // Handle recipe completion - show share modal
   const handleRecipeComplete = useCallback(async (recipe: Recipe, rating: number) => {
     setCompletedRecipe(recipe);
     setCompletedRating(rating);
     setShowRecipeDetail(false);
-    
-    // Award XP for completing recipe
-    try {
-      const ingredients = recipe.ingredients?.map(ing => ing.name) || [];
-      const result = await userStatsService.onRecipeComplete(ingredients);
-      
-      // Sync context with updated stats from service
-      await updateStats({ 
-        xp: result.newXP, 
-        level: result.newLevel ?? stats.level,
-        recipesCompleted: stats.recipesCompleted + 1,
-      });
-      
-      // Show level up notification only if leveled up
-      if (result.leveledUp && result.newLevel) {
-        setTimeout(() => {
-          Alert.alert(
-            '🎉 Level Up!',
-            `Congratulations! You're now a ${result.newLevel}!\n\n+${result.xpAwarded} XP earned`,
-            [{ text: 'Awesome!' }]
-          );
-        }, 500);
-      } else if (result.newAchievements && result.newAchievements.length > 0) {
-        // Show achievement unlocked
-        const achievementList = result.newAchievements.join('\n');
-        Alert.alert(
-          '🏆 Achievement Unlocked!',
-          `${achievementList}\n\n+${result.xpAwarded} XP earned`,
-          [{ text: 'Awesome!' }]
-        );
-      } else {
-        // Just show XP earned
-        Alert.alert(
-          '✨ Recipe Complete!',
-          `You earned +${result.xpAwarded} XP`,
-          [{ text: 'Nice!' }]
-        );
-      }
-    } catch (error) {
-      console.error('Error awarding XP:', error);
-    }
-    
+
     // Brief delay before showing share prompt
     setTimeout(() => {
       setShowShareModal(true);
     }, 800);
-  }, [stats, updateStats]);
+  }, []);
 
-  // Handle share completion - award bonus XP
+  // Handle share completion
   const handleShareComplete = useCallback(async () => {
     setShowShareModal(false);
     setCompletedRecipe(null);
     setTab('Community');
-    
-    // Award XP for sharing
-    try {
-      const result = await userStatsService.onShareCreation();
-      // Sync context with updated stats
-      await updateStats({ 
-        xp: result.newXP,
-        recipesShared: stats.recipesShared + 1,
-      });
-    } catch (error) {
-      console.error('Error awarding share XP:', error);
-    }
-  }, [stats, updateStats]);
+  }, []);
 
   // Open recipe detail
   const openRecipeDetail = (recipe: Recipe) => {
@@ -889,3 +835,4 @@ const styles = StyleSheet.create({
   },
   fabText: { color: '#fff', fontWeight: '800', textAlign: 'center' },
 });
+
