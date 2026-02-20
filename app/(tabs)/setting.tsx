@@ -69,6 +69,10 @@ const SECTIONS = [
         label: 'Community', 
         sublabel: 'Connect with other users',
         icon: 'users' },
+      { key: 'reward',
+        label: 'Rewards',
+        sublabel: 'View your rewards and redeem them',
+        icon: 'gift' },
     ],
   },
   {
@@ -172,7 +176,7 @@ export default function SettingsScreen() {
     }
     // Navigate to language settings placeholder
     if (key === 'language') {
-      router.push({ pathname: '/Localization/language' });
+      router.push({ pathname: '/localization/language' });
       return;
     }
     // Default: just log

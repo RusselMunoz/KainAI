@@ -583,6 +583,18 @@ async function completeRecipe(userId, recipeId, rating = null) {
     }, { merge: true });
   }
   
+  // Update secondary user_stats collection for leaderboard
+  const xpAwarded = 50;
+  const userData = userDoc.exists ? userDoc.data() : {};
+  
+  await db.collection('user_stats').doc(userId).set({
+    userId: userId,
+    displayName: userData.displayName || userData.username || 'Anonymous',
+    xp: admin.firestore.FieldValue.increment(xpAwarded), // Mirroring for leaderboard sorting
+    totalXP: admin.firestore.FieldValue.increment(xpAwarded),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  
   return { success: true, newLevel: currentLevel };
 }
 
