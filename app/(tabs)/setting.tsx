@@ -237,7 +237,13 @@ export default function SettingsScreen() {
                   key={it.key}
                   style={[styles.row, i === 0 ? {} : styles.rowBorder]}
                   onPress={() => onPressItem(it.key)}>
-                  <Text style={styles.rowText}>{it.label}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                    {it.icon && <Feather name={it.icon as any} size={18} color="#555" style={{ marginRight: 10 }} />}
+                    <View>
+                      <Text style={styles.rowText}>{it.label}</Text>
+                      {it.sublabel && <Text style={{ fontSize: 12, color: '#999' }}>{it.sublabel}</Text>}
+                    </View>
+                  </View>
                   <Feather name="chevron-right" size={18} color="#777" />
                 </Pressable>
               ))}

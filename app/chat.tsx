@@ -5,7 +5,6 @@ import { GiftedChat, IMessage, Send, Bubble, InputToolbar } from 'react-native-g
 import axios from 'axios';
 import { validateIngredient } from '../services/profanity-filter.service';
 import recipeService from '../services/recipe.service';
-import userStatsService from '../services/user-stats.service';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../contexts/UserContext';
 import type { Recipe } from '../types';
@@ -84,20 +83,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [inputText, setInputText] = useState(''); // Track input text for manual send
   const [pendingAddIngredients, setPendingAddIngredients] = useState<string[] | null>(null); // Track ingredients when adding more
-  const statsLoadedRef = useRef(false);
   const lastSavedRecipeRef = useRef<string | null>(null);
-
-  const ensureStatsLoaded = useCallback(async () => {
-    if (statsLoadedRef.current) {
-      return;
-    }
-    try {
-      await userStatsService.loadStats();
-      statsLoadedRef.current = true;
-    } catch (error) {
-      console.error('❌ Failed to load user stats:', error);
-    }
-  }, []);
 
   const persistGeneratedRecipe = useCallback(
     async (recipeId?: string | null, recipePayload?: Recipe | null) => {
@@ -120,25 +106,11 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
           return;
         }
         lastSavedRecipeRef.current = syncedRecipe.id;
-
-        await ensureStatsLoaded();
-
-        const ingredientNames = Array.isArray(syncedRecipe.ingredients)
-          ? syncedRecipe.ingredients
-              .map((ingredient: any) =>
-                typeof ingredient === 'string' ? ingredient : ingredient?.name || ''
-              )
-              .filter(Boolean)
-          : [];
-
-        if (ingredientNames.length > 0) {
-          await userStatsService.onRecipeComplete(ingredientNames);
-        }
       } catch (error) {
         console.error('❌ Failed to persist generated recipe:', error);
       }
     },
-    [activeUserId, ensureStatsLoaded]
+    [activeUserId]
   );
   
   // Check if there's an active confirmation message requiring button interaction

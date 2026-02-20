@@ -1,5 +1,30 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+	ScrollView,
+	StyleSheet,
+	Text,
+	View,
+	ActivityIndicator,
+	RefreshControl,
+} from 'react-native';
+import { Platform } from 'react-native';
+import axios from 'axios';
+import { useAuth } from '../../../contexts/AuthContext';
+
+// API base URL
+const API_BASE = Platform.select({
+	android: 'http://10.0.2.2:5173',
+	ios: 'http://localhost:5173',
+	default: 'http://localhost:5173',
+});
+
+interface LeaderboardEntry {
+	uid: string;
+	displayName: string;
+	xp: number;
+	level: number;
+	recipesCompleted?: number;
+}
 
 export default function LeaderboardScreen() {
 	return (

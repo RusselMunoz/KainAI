@@ -256,13 +256,16 @@ app.post('/api/add-user', async (req, res) => {
   }
 });
 
-// Get leaderboard (top 50 by XP)
+// Get leaderboard (top 100 by XP, sorted in Firestore)
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const db = admin.firestore();
-    // Query user_stats for XP data (correct source of truth)
+    const { userId } = req.query;
+    
+    // Query user_stats for XP data, sorted by XP descending in Firestore
     const snapshot = await db.collection('user_stats')
-      .limit(50)
+      .orderBy('xp', 'desc')
+      .limit(100)
       .get();
 
     let leaderboard = await Promise.all(snapshot.docs.map(async (doc) => {
@@ -290,8 +293,40 @@ app.get('/api/leaderboard', async (req, res) => {
       };
     }));
 
-    // Sort by XP descending in JavaScript
-    leaderboard.sort((a, b) => (b.xp || 0) - (a.xp || 0));
+    // If userId is provided, ensure current user is included even if outside top 100
+    if (userId) {
+      const userInLeaderboard = leaderboard.some(u => u.uid === userId);
+      
+      if (!userInLeaderboard) {
+        try {
+          const userStatsDoc = await db.collection('user_stats').doc(userId).get();
+          if (userStatsDoc.exists) {
+            const userStats = userStatsDoc.data();
+            let displayName = 'Anonymous';
+            
+            try {
+              const userDoc = await db.collection('users').doc(userId).get();
+              if (userDoc.exists) {
+                const userData = userDoc.data();
+                displayName = userData.displayName || userData.username || 'Anonymous';
+              }
+            } catch (e) {
+              console.warn(`Error fetching user ${userId} for leaderboard:`, e.message);
+            }
+
+            leaderboard.push({
+              uid: userId,
+              displayName,
+              xp: userStats.xp || 0,
+              level: userStats.level || 1,
+              recipesCompleted: userStats.recipesCompleted || 0
+            });
+          }
+        } catch (e) {
+          console.warn(`Error fetching current user ${userId} stats:`, e.message);
+        }
+      }
+    }
 
     return res.json({ ok: true, leaderboard });
   } catch (err) {
@@ -300,6 +335,41 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
+// Sync user_stats from users collection (fix stale XP)
+app.post('/api/sync-user-stats/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const db = admin.firestore();
+
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+
+    const userData = userDoc.data();
+    const xp = userData.xp ?? 0;
+    const level = userData.level ?? 1;
+    const recipesCompleted = userData.recipesCompleted ?? 0;
+    const displayName = userData.displayName || userData.username || 'Anonymous';
+
+    await db.collection('user_stats').doc(userId).set({
+      userId,
+      displayName,
+      xp,
+      level,
+      recipesCompleted,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return res.json({
+      ok: true,
+      synced: { userId, xp, level, recipesCompleted, displayName }
+    });
+  } catch (err) {
+    console.error('Sync user stats error:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 if (!API_KEY) {
   console.warn('GROQ_API_KEY not set. Set process.env.GROQ_API_KEY before starting the server.');

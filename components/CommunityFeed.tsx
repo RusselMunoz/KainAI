@@ -14,6 +14,7 @@ import {
   Dimensions,
   ActivityIndicator,
   Share,
+  Platform,
 } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
@@ -28,6 +29,13 @@ import userService from '../services/userService';
 import Avatar from './Avatar';
 
 const screenW = Dimensions.get('window').width;
+
+// API base URL
+const API_BASE = Platform.select({
+  android: 'http://10.0.2.2:5173',
+  ios: 'http://localhost:5173',
+  default: 'http://localhost:5173',
+});
 
 // Filter tabs
 const FILTERS: { label: string; value: PostType | 'all' }[] = [
@@ -71,15 +79,18 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
   }, [filter]);
   
   useEffect(() => {
-    fetch('http://10.0.2.2:5173/api/leaderboard')
-      .then(r => r.json())
-      .then(data => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/leaderboard?userId=${userId}`);
+        const data = await res.json();
         console.log('[LB] response:', JSON.stringify(data).slice(0, 200));
         const users = data.leaderboard || data.users || (Array.isArray(data) ? data : []);
         setLbUsers(users);
-      })
-      .catch(() => {});
-  }, []);
+      } catch (err) {
+        console.error('[LB] Error:', err);
+      }
+    })();
+  }, [userId]);
 
   const loadFeed = async () => {
     setLoading(true);
@@ -208,17 +219,24 @@ export function CommunityFeed({ userId, onSharePress, onViewRecipe }: CommunityF
       </View>
 
       {/* Leaderboard Card */}
-      <View style={{ backgroundColor:'#fff', borderRadius:12, margin:12, padding:12, borderLeftWidth:3, borderLeftColor:'#4CAF50' }}>
-        <Text style={{ fontWeight:'bold', fontSize:15, color:'#4CAF50', marginBottom:8 }}>🏆 Top Chefs</Text>
-        {(lbExpanded ? lbUsers : lbUsers.slice(0,3)).map((u, i) => (
-          <View key={u.uid} style={{ flexDirection:'row', justifyContent:'space-between', paddingVertical:4 }}>
-            <Text style={{ color: i===0?'#FFD700': i===1?'#C0C0C0': i===2?'#CD7F32':'#333' }}>#{i+1} {u.displayName}</Text>
-            <Text style={{ color:'#4CAF50' }}>{u.xp} XP</Text>
-          </View>
-        ))}
-        {lbUsers.length === 0 && <Text style={{ color:'#999', textAlign:'center' }}>No rankings yet</Text>}
-        <TouchableOpacity onPress={() => setLbExpanded(e => !e)} style={{ marginTop:8, alignItems:'center' }}>
-          <Text style={{ color:'#4CAF50', fontWeight:'600' }}>{lbExpanded ? 'Show Less ▲' : 'See Full Rankings ▼'}</Text>
+      <View style={{ backgroundColor: '#fff', borderRadius: 16, marginHorizontal: 12, marginVertical: 8, padding: 16, elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#1a1a1a', flex: 1 }}>🏆 Top Chefs</Text>
+        </View>
+        {(lbExpanded ? lbUsers : lbUsers.slice(0, 3)).map((u, i) => {
+          const medals = ['🥇', '🥈', '🥉'];
+          const isCurrentUser = u.uid === userId;
+          return (
+            <View key={u.uid} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, marginBottom: 4, borderRadius: 10, backgroundColor: isCurrentUser ? '#e8f8f0' : i % 2 === 0 ? '#fafafa' : '#fff', borderWidth: isCurrentUser ? 1.5 : 0, borderColor: '#18b66f' }}>
+              <Text style={{ fontSize: 18, width: 32 }}>{medals[i] || `#${i + 1}`}</Text>
+              <Text style={{ flex: 1, fontWeight: isCurrentUser ? '700' : '500', color: '#1a1a1a', fontSize: 14 }}>{u.displayName}{isCurrentUser ? ' (You)' : ''}</Text>
+              <Text style={{ fontWeight: '700', color: '#18b66f', fontSize: 13 }}>{u.xp} XP</Text>
+            </View>
+          );
+        })}
+        {lbUsers.length === 0 && <Text style={{ color: '#999', textAlign: 'center', paddingVertical: 12 }}>No rankings yet</Text>}
+        <TouchableOpacity onPress={() => setLbExpanded(e => !e)} style={{ marginTop: 8, alignItems: 'center', paddingVertical: 6 }}>
+          <Text style={{ color: '#18b66f', fontWeight: '600', fontSize: 13 }}>{lbExpanded ? 'Show Less ▲' : 'See Full Rankings ▼'}</Text>
         </TouchableOpacity>
       </View>
 
