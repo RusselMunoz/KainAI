@@ -21,6 +21,7 @@ import authService from '../../services/auth.service';
 
 const topInset = Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 12 : 12;
 const AUTH_STORAGE_KEYS = ['@kainai_auth_state', '@cheffy_mock_user'];
+const SHOW_DEBUG = false;
 
 const SECTIONS = [
   {
@@ -101,19 +102,12 @@ export default function SettingsScreen() {
 
   const onBack = () => {
     router.back();
-    console.log('back pressed');
   };
 
   const handleSignOut = useCallback(async () => {
-    console.log('[Settings] Sign Out button pressed');
     try {
-      console.log('[Settings] Calling authService.signOut...');
       const serviceResult = await authService.signOut();
-      console.log('[Settings] authService.signOut result:', serviceResult);
-
-      console.log('[Settings] Calling AuthContext.signOut...');
       const authResult = await authSignOut();
-      console.log('[Settings] AuthContext.signOut result:', authResult);
 
       if (!serviceResult.success || !authResult.success) {
         Alert.alert('Sign Out Failed', String(serviceResult.error || authResult.error || 'Please try again.'));
@@ -122,7 +116,6 @@ export default function SettingsScreen() {
 
       try {
         await AsyncStorage.multiRemove(AUTH_STORAGE_KEYS);
-        console.log('[Settings] Cleared AsyncStorage keys:', AUTH_STORAGE_KEYS.join(', '));
       } catch (error) {
         console.error('[Settings] Failed to clear auth AsyncStorage keys:', error);
         // We still proceed after sign-out, but surface that local storage may be stale
@@ -179,8 +172,6 @@ export default function SettingsScreen() {
       router.push({ pathname: '/localization/language' });
       return;
     }
-    // Default: just log
-    console.log('pressed', key);
   };
 
   return (
@@ -193,7 +184,7 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
-        {/* User Profile Card with XP */}
+        {/* User Profile Card */}
         <View style={styles.profileCard}>
           <Avatar 
             name={profile.displayName || 'User'} 
@@ -204,14 +195,9 @@ export default function SettingsScreen() {
             <Text style={styles.profileName}>{profile.displayName || 'User'}</Text>
             <Text style={styles.profileLevel}>{profile.cookingLevel}</Text>
           </View>
-          <View style={styles.xpContainer}>
-            <Text style={styles.xpValue}>0</Text>
-            <Text style={styles.xpLabel}>XP</Text>
-          </View>
         </View>
 
-        {/* Debug button - easy access to test all screens - only in dev */}
-        {__DEV__ && (
+        {SHOW_DEBUG && (
           <Pressable
             style={{
               backgroundColor: '#e74c3c',
@@ -222,7 +208,7 @@ export default function SettingsScreen() {
             }}
             onPress={() => router.push('/debug')}>
             <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
-              🧪 Debug - Test All Screens
+              Debug - Test All Screens
             </Text>
           </Pressable>
         )}
@@ -288,7 +274,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginLeft: 12,
   },
-  // Profile Card with XP
+  // Profile Card
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -316,26 +302,6 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 2,
   },
-  xpContainer: {
-    alignItems: 'center',
-    backgroundColor: '#f0fdf4',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#2bb673',
-  },
-  xpValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#2bb673',
-  },
-  xpLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2bb673',
-  },
-
   container: {
     paddingHorizontal: 14,
     paddingTop: 16,

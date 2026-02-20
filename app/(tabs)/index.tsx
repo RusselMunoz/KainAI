@@ -50,6 +50,7 @@ const composerHeight = 66; // used for bottom padding so content isn't hidden
 
 // Fallback user ID for demo mode (when not authenticated)
 const DEMO_USER_ID_FALLBACK = 'demo-user-id';
+const SHOW_DEBUG = false;
 
 export default function Dashboard() {
   const router = useRouter();
@@ -163,14 +164,15 @@ export default function Dashboard() {
             <Text style={styles.rewardPointsEmoji}>🎁</Text>
             <Text style={styles.rewardPointsText}>{rewardPoints} pts</Text>
           </TouchableOpacity>
-          {/* Debug button - remove in production */}
-          <Pressable
-            style={[styles.settings, { marginRight: 8, backgroundColor: '#e74c3c' }]}
-            onPress={() => {
-              router.push('/debug');
-            }}>
-            <Feather name="cpu" size={18} color="#fff" />
-          </Pressable>
+          {SHOW_DEBUG && (
+            <Pressable
+              style={[styles.settings, { marginRight: 8, backgroundColor: '#e74c3c' }]}
+              onPress={() => {
+                router.push('/debug');
+              }}>
+              <Feather name="cpu" size={18} color="#fff" />
+            </Pressable>
+          )}
           <Pressable
             style={styles.settings}
             onPress={() => {

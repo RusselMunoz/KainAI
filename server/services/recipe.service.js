@@ -174,7 +174,7 @@ function parseAIRecipeResponse(aiResponse) {
  */
 function parseIngredient(line) {
   // Clean the line - remove bullets, numbers, and sanitize encoding
-  let cleanLine = line.replace(/^[-â€¢\d.)\s]+/, '').trim();
+  let cleanLine = line.replace(/^[-•\*]\s*/, '').replace(/^\d+[.)]\s+/, '').trim();
   if (!cleanLine) return null;
 
   // Fix common encoding issues
@@ -903,3 +903,5 @@ module.exports = {
   unshareRecipe,
   getPublicRecipes
 };
+
+
