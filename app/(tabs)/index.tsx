@@ -122,6 +122,7 @@ export default function Dashboard() {
       const response = await fetch(`${API_BASE}/api/user/${activeUserId}`);
       const data = await response.json();
       if (data.ok && data.user) {
+        console.log('[Dashboard] handleRecipeComplete fetched user stats:', data.user.xp, data.user.level);
         await refreshStats(data.user.xp, data.user.level as UserLevel);
       }
     } catch (e) {

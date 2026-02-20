@@ -477,6 +477,7 @@ export function UserProvider({ children }: UserProviderProps) {
   // Update stats (partial update) - This triggers re-renders in all subscribed components
   const updateStats = useCallback(async (updates: Partial<UserStats>) => {
     try {
+      console.log('[UserContext] updateStats called with:', updates?.xp, updates?.level, updates);
       const newStats = { ...stats, ...updates };
       
       // Handle nested weeklyGoals updates
