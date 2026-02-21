@@ -432,16 +432,96 @@ app.post('/api/chat', async (req, res) => {
     }
     console.log('👤 User data:', JSON.stringify(userData, null, 2));
 
+    // Normalize the Firestore profile fields we need for prompt injection + safety checks
+    const userProfile = {
+      dietary_preferences: Array.isArray(userData?.dietary_preferences)
+        ? userData.dietary_preferences
+        : (userData?.dietary_preferences ? [userData.dietary_preferences] : []),
+      dietary_custom: typeof userData?.dietary_custom === 'string' ? userData.dietary_custom.trim() : '',
+      dietary_allergies: Array.isArray(userData?.dietary_allergies)
+        ? userData.dietary_allergies
+        : (userData?.dietary_allergies ? [userData.dietary_allergies] : []),
+      allergy_custom: typeof userData?.allergy_custom === 'string' ? userData.allergy_custom.trim() : '',
+      level: userData?.level || (Array.isArray(userData?.cooking_skills) ? userData.cooking_skills[0] : userData?.cooking_skills) || 'Beginner',
+    };
+    console.log('dietary_custom:', userProfile.dietary_custom);
+
+    const tokenizeRestrictionText = (text) => {
+      if (!text || typeof text !== 'string') return [];
+      return text
+        .split(/[,;\n]| and /gi)
+        .map((part) => part.trim().toLowerCase())
+        .map((part) => part.replace(/^(no|avoid|without|allergic to|can't eat|cannot eat)\s+/i, '').trim())
+        .filter((part) => part && part !== 'none' && part.length >= 3);
+    };
+
+    const dietaryKeywordMap = {
+      'no red meat': ['beef', 'pork', 'lamb', 'veal', 'bison', 'venison', 'bacon', 'ham', 'sausage'],
+      'no dairy': ['milk', 'cheese', 'butter', 'cream', 'yogurt', 'whey'],
+      'no gluten': ['wheat', 'flour', 'bread', 'pasta', 'barley', 'rye'],
+      'no sugar': ['sugar', 'syrup', 'honey', 'molasses'],
+      'no pork': ['pork', 'bacon', 'ham', 'lard', 'sausage'],
+    };
+
+    const expandDietaryBlocklist = (dietaryCustomText) => {
+      if (!dietaryCustomText || typeof dietaryCustomText !== 'string') return [];
+      const lowerText = dietaryCustomText.toLowerCase();
+      const expanded = [];
+      for (const [keyword, items] of Object.entries(dietaryKeywordMap)) {
+        if (lowerText.includes(keyword)) {
+          expanded.push(...items);
+        }
+      }
+      return [...new Set(expanded)];
+    };
+
+    const findIngredientConflicts = (ingredients, rules) => {
+      if (!Array.isArray(ingredients) || ingredients.length === 0 || !Array.isArray(rules) || rules.length === 0) {
+        return [];
+      }
+
+      const conflicts = [];
+      for (const ingredient of ingredients) {
+        const lowerIngredient = String(ingredient || '').toLowerCase();
+        if (!lowerIngredient) continue;
+
+        const matched = rules.find((rule) => lowerIngredient.includes(rule.term) || rule.term.includes(lowerIngredient));
+        if (matched) {
+          conflicts.push({
+            ingredient,
+            rule: matched.term,
+            source: matched.source,
+          });
+        }
+      }
+      return conflicts;
+    };
+
     // ==================== REQUEST ROUTING ====================
     console.log('🔥 ROUTING REQUEST:', { confirmed, promptStart: prompt?.slice(0, 60) });
     
     // CASE 1: Initial ingredient submission (confirmed is undefined/null)
     if (confirmed === undefined || confirmed === null) {
       console.log('📋 CASE 1: Initial submission - asking for confirmation');
+      const dietaryCustomRules = tokenizeRestrictionText(userProfile.dietary_custom).map((term) => ({ term, source: 'dietary_custom' }));
+      const allergyRules = [
+        ...userProfile.dietary_allergies
+          .map((term) => String(term || '').trim().toLowerCase())
+          .filter((term) => term && term !== 'none'),
+        ...tokenizeRestrictionText(userProfile.allergy_custom),
+      ].map((term) => ({ term, source: 'dietary_allergies' }));
+
+      const preConfirmConflicts = findIngredientConflicts(ingredientList, [...dietaryCustomRules, ...allergyRules]);
+      const uniqueConflictIngredients = [...new Set(preConfirmConflicts.map((c) => c.ingredient))];
+      const uniqueConflictRules = [...new Set(preConfirmConflicts.map((c) => c.rule))];
+      const warningPrefix = uniqueConflictIngredients.length > 0
+        ? `⚠️ Potential conflict detected: ${uniqueConflictIngredients.join(', ')} may conflict with your saved restrictions (${uniqueConflictRules.join(', ')}).\n\n`
+        : '';
+
       return res.json({
         ok: true,
         needsConfirmation: true,
-        message: `You provided these ingredients: ${ingredientList?.join(', ') || ''}.\nAre these final, or may I recommend and include additional ingredients? Please confirm before I generate your recipe.`
+        message: `${warningPrefix}You provided these ingredients: ${ingredientList?.join(', ') || ''}.\nAre these final, or may I recommend and include additional ingredients? Please confirm before I generate your recipe.`
       });
     }
     
@@ -457,8 +537,8 @@ app.post('/api/chat', async (req, res) => {
       const recommendationPrompt = `Based on these ingredients: ${ingredientList?.join(', ')}, suggest 3-5 complementary ingredients that would work well together.
 
 User dietary constraints:
-- Preferences: ${(Array.isArray(userData.dietary_preferences) ? userData.dietary_preferences.join(', ') : userData.dietary_preferences) || 'None'}${userData.dietary_custom ? ` (Custom: ${userData.dietary_custom})` : ''}
-- Allergies to avoid: ${(Array.isArray(userData.dietary_allergies) ? userData.dietary_allergies.join(', ') : userData.dietary_allergies) || 'None'}${userData.allergy_custom ? ` (Custom: ${userData.allergy_custom})` : ''}
+- Preferences: ${userProfile.dietary_preferences.join(', ') || 'None'}${userProfile.dietary_custom ? ` (Custom: ${userProfile.dietary_custom})` : ''}
+- Allergies to avoid: ${userProfile.dietary_allergies.join(', ') || 'None'}${userProfile.allergy_custom ? ` (Custom: ${userProfile.allergy_custom})` : ''}
 
 FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 Here are 3-5 ingredients that would complement your selection:
@@ -526,8 +606,25 @@ Would you like to add any of these? Just type them out and I'll include them in 
     console.log('✅ CASE 4: User confirmed - GENERATING RECIPE');
     // IMPORTANT: Use higher max_tokens for full recipe generation
     const recipeMaxTokens = 2048;
+    const expandedBlocklist = expandDietaryBlocklist(userProfile.dietary_custom);
+
+    const dietaryCustomRules = tokenizeRestrictionText(userProfile.dietary_custom).map((term) => ({ term, source: 'dietary_custom' }));
+    const expandedBlocklistRules = expandedBlocklist.map((term) => ({ term, source: 'dietary_custom_expanded' }));
+    const case4ConflictRules = [...dietaryCustomRules, ...expandedBlocklistRules];
+    const case4Conflicts = findIngredientConflicts(ingredientList, case4ConflictRules);
+    const conflictingIngredients = [...new Set(case4Conflicts.map((c) => c.ingredient))];
+    const conflictRules = [...new Set(case4Conflicts.map((c) => c.rule))];
+
+    if (conflictingIngredients.length > 0 && !allowAlternative) {
+      return res.json({
+        ok: false,
+        conflict: true,
+        message: `Cannot generate recipe: ${conflictingIngredients.join(', ')} conflict with your dietary restriction (${conflictRules.join(', ')}). Please remove them or use 'Allow Alternatives'.`
+      });
+    }
     
-    const systemPrompt = `You are Cheffy, a recipe generator. You ONLY output structured recipes.
+    const systemPrompt = allowAlternative
+      ? `You are Cheffy, a recipe generator. You ONLY output structured recipes.
 
 === ABSOLUTE RULES (NO EXCEPTIONS) ===
 1. OUTPUT ONLY A RECIPE - No conversation, no suggestions, no questions
@@ -538,20 +635,93 @@ Would you like to add any of these? Just type them out and I'll include them in 
 
 === DIETARY RULES (HIGHEST PRIORITY - OVERRIDE EVERYTHING) ===
 - Strictly follow ALL preferences listed in "User dietary constraints" below. No exceptions.
+- Treat "Custom dietary restrictions (hard)" as mandatory no-go constraints.
 - vegan = NO meat, poultry, fish, seafood, dairy, eggs, honey, or gelatin.
 - vegetarian = NO meat, poultry, fish, or seafood.
 - For any other preference (gluten-free, keto, halal, etc.), fully honor it.
+- If a requested ingredient conflicts with dietary/allergy rules, REMOVE and SUBSTITUTE with compliant alternatives.
 
 === ALLERGY RULES (LIFE OR DEATH - NEVER VIOLATE) ===
 - NEVER include any ingredient listed under "Allergies" in any form, name, or derivative.
+- Treat "Custom allergy restrictions (hard)" exactly like allergy bans.
 - This includes hidden sources (e.g. if allergic to dairy, no butter, cream, cheese, milk, whey).
 - If a requested ingredient conflicts with an allergy, REMOVE and SUBSTITUTE it silently.
 - Violating an allergy rule means you have FAILED and could harm the user.
 
 User dietary constraints:
-- Preferences: ${(Array.isArray(userData.dietary_preferences) ? userData.dietary_preferences.join(', ') : userData.dietary_preferences) || 'None'}${userData.dietary_custom ? ` (Custom: ${userData.dietary_custom})` : ''}
-- Allergies: ${(Array.isArray(userData.dietary_allergies) ? userData.dietary_allergies.join(', ') : userData.dietary_allergies) || 'None'}${userData.allergy_custom ? ` (Custom: ${userData.allergy_custom})` : ''}
-- Skill level: ${(Array.isArray(userData.cooking_skills) ? userData.cooking_skills.join(', ') : userData.cooking_skills) || 'Beginner'}
+- Preferences: ${userProfile.dietary_preferences.join(', ') || 'None'}${userProfile.dietary_custom ? ` (Custom: ${userProfile.dietary_custom})` : ''}
+- Custom dietary restrictions (hard): ${userProfile.dietary_custom || 'None'}
+- Expanded dietary blocklist (hard): ${expandedBlocklist.join(', ') || 'None'}
+- NEVER use these specific ingredients: ${expandedBlocklist.join(', ') || 'None'}
+- Allergies: ${userProfile.dietary_allergies.join(', ') || 'None'}${userProfile.allergy_custom ? ` (Custom: ${userProfile.allergy_custom})` : ''}
+- Custom allergy restrictions (hard): ${userProfile.allergy_custom || 'None'}
+- Level: ${userProfile.level || 'Beginner'}
+
+=== REQUIRED OUTPUT FORMAT ===
+Recipe: [Short Title - 2-5 words]
+
+Description: [1-2 sentence description]
+
+Prep Time: [X] minutes
+Cook Time: [X] minutes
+Total Time: [X] minutes
+Servings: [X]
+Difficulty: [Easy/Medium/Hard]
+Calories: [X] per serving
+
+Ingredients:
+- 1 cup ingredient name
+- 2 tbsp ingredient name
+- 1/2 tsp ingredient name
+
+Instructions:
+1. First step (X mins)
+2. Second step (X mins)
+3. Third step (X mins)
+
+Nutrition:
+- Protein: [X]g
+- Carbs: [X]g
+- Fat: [X]g
+
+Tips:
+- One helpful tip
+
+=== OUTPUT NOW ===
+Generate the recipe immediately using the provided ingredients.`
+      : `You are Cheffy, a recipe generator. You ONLY output structured recipes.
+
+=== ABSOLUTE RULES (NO EXCEPTIONS) ===
+1. OUTPUT ONLY A RECIPE - No conversation, no suggestions, no questions
+2. START IMMEDIATELY with "Recipe:" on the first line
+3. NEVER say "I recommend", "To create", "I suggest", or any conversational text
+4. NEVER ask "would you like" or offer alternatives
+5. If you output ANYTHING other than a recipe, you have FAILED
+
+=== DIETARY RULES (HIGHEST PRIORITY - OVERRIDE EVERYTHING) ===
+- Strictly follow ALL preferences listed in "User dietary constraints" below. No exceptions.
+- Treat "Custom dietary restrictions (hard)" as mandatory no-go constraints.
+- vegan = NO meat, poultry, fish, seafood, dairy, eggs, honey, or gelatin.
+- vegetarian = NO meat, poultry, fish, or seafood.
+- For any other preference (gluten-free, keto, halal, etc.), fully honor it.
+- Do NOT substitute or replace conflicting ingredients.
+- If any provided ingredient conflicts with dietary/allergy rules, REFUSE and return no recipe.
+
+=== ALLERGY RULES (LIFE OR DEATH - NEVER VIOLATE) ===
+- NEVER include any ingredient listed under "Allergies" in any form, name, or derivative.
+- Treat "Custom allergy restrictions (hard)" exactly like allergy bans.
+- This includes hidden sources (e.g. if allergic to dairy, no butter, cream, cheese, milk, whey).
+- Do NOT substitute allergy conflicts in this mode; refusal is required if conflict exists.
+- Violating an allergy rule means you have FAILED and could harm the user.
+
+User dietary constraints:
+- Preferences: ${userProfile.dietary_preferences.join(', ') || 'None'}${userProfile.dietary_custom ? ` (Custom: ${userProfile.dietary_custom})` : ''}
+- Custom dietary restrictions (hard): ${userProfile.dietary_custom || 'None'}
+- Expanded dietary blocklist (hard): ${expandedBlocklist.join(', ') || 'None'}
+- NEVER use these specific ingredients: ${expandedBlocklist.join(', ') || 'None'}
+- Allergies: ${userProfile.dietary_allergies.join(', ') || 'None'}${userProfile.allergy_custom ? ` (Custom: ${userProfile.allergy_custom})` : ''}
+- Custom allergy restrictions (hard): ${userProfile.allergy_custom || 'None'}
+- Level: ${userProfile.level || 'Beginner'}
 
 === REQUIRED OUTPUT FORMAT ===
 Recipe: [Short Title - 2-5 words]
@@ -590,7 +760,7 @@ Generate the recipe immediately using the provided ingredients.`;
     const ingredientString = ingredientList?.join(', ') || '';
 
     // Dietary violation check
-    const prefs = (Array.isArray(userData.dietary_preferences) ? userData.dietary_preferences : [userData.dietary_preferences]).map(p => p?.toLowerCase());
+    const prefs = userProfile.dietary_preferences.map(p => p?.toLowerCase());
     const veganBlocklist = ['chicken', 'beef', 'pork', 'lamb', 'fish', 'shrimp', 'prawn', 'bacon', 'turkey', 'meat', 'salmon', 'tuna', 'crab', 'lobster', 'milk', 'cheese', 'butter', 'cream', 'egg', 'eggs', 'honey', 'gelatin', 'lard'];
     const vegetarianBlocklist = ['chicken', 'beef', 'pork', 'lamb', 'fish', 'shrimp', 'prawn', 'bacon', 'turkey', 'meat', 'salmon', 'tuna', 'crab', 'lobster'];
 
@@ -602,7 +772,7 @@ Generate the recipe immediately using the provided ingredients.`;
     }
 
     // Check allergies
-    const allergies = (Array.isArray(userData.dietary_allergies) ? userData.dietary_allergies : [userData.dietary_allergies])
+    const allergies = userProfile.dietary_allergies
       .map(a => a?.toLowerCase())
       .filter(a => a && a !== 'none');
 
@@ -614,9 +784,9 @@ Generate the recipe immediately using the provided ingredients.`;
     }
 
     if (violatingIngredients.length > 0 && !allowAlternative) {
-      const dietaryPrefLabel = Array.isArray(userData.dietary_preferences)
-        ? userData.dietary_preferences.join(', ')
-        : (userData.dietary_preferences || 'dietary preferences');
+      const dietaryPrefLabel = userProfile.dietary_preferences.length > 0
+        ? userProfile.dietary_preferences.join(', ')
+        : 'dietary preferences';
       const prefViolations = violatingIngredients.filter(i =>
         prefs.includes('vegan') ? veganBlocklist.some(b => i.toLowerCase().includes(b)) :
         prefs.includes('vegetarian') ? vegetarianBlocklist.some(b => i.toLowerCase().includes(b)) : false
@@ -641,32 +811,36 @@ Generate the recipe immediately using the provided ingredients.`;
       });
     }
 
-    const dietaryPrefs = Array.isArray(userData.dietary_preferences)
-      ? userData.dietary_preferences
-      : (userData.dietary_preferences ? [userData.dietary_preferences] : []);
+    const dietaryPrefs = userProfile.dietary_preferences;
     const dietaryNote = dietaryPrefs.length
       ? `IMPORTANT: User is ${dietaryPrefs.join(', ')}. Replace any non-compliant ingredients with suitable alternatives.`
       : '';
     const alternativeNote = allowAlternative && violatingIngredients.length > 0
       ? `IMPORTANT: The user approved substitutions for these conflicting ingredients: ${violatingIngredients.join(', ')}. Substitute compliant alternatives and continue without asking follow-up questions.`
       : '';
+    const expandedBlocklistNote = expandedBlocklist.length > 0
+      ? `IMPORTANT: NEVER use these specific ingredients: ${expandedBlocklist.join(', ')}.`
+      : '';
 
     const userPrompt = `Create a recipe with these ingredients: ${ingredientString}
 
 ${dietaryNote}
 ${alternativeNote}
+${expandedBlocklistNote}
 
 OUTPUT THE RECIPE NOW. Start with "Recipe:" on line 1.`;
 
 
     // Groq uses OpenAI-compatible API
     const url = `${BASE}/chat/completions`;
+    const groqMessages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ];
+    console.log('🔒 Groq messages:', groqMessages);
     const body = {
       model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
+      messages: groqMessages,
       temperature: 0.3, // Lower temperature for more consistent recipe output
       max_tokens: recipeMaxTokens // Higher tokens for complete recipes
     };
@@ -676,6 +850,7 @@ OUTPUT THE RECIPE NOW. Start with "Recipe:" on line 1.`;
     console.log('   User prompt:', userPrompt.slice(0, 150) + '...');
     console.log('   Temperature:', temperature);
     console.log('   Max tokens:', maxTokens);
+    console.log('🔒 System prompt:', systemPrompt);
 
     const r = await fetchFn(url, {
       method: 'POST',
@@ -1081,3 +1256,4 @@ app.get('/api/community/search', async (req, res) => {
 const port = process.env.PORT || 5173;
 const server = app.listen(port, '0.0.0.0', () => console.log(`Groq API server listening on http://0.0.0.0:${port}`));
 server.keepAliveTimeout = 120000;
+

@@ -286,6 +286,23 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
             }
           }, 1500);
         }
+      } else if (data.ok === false && data.conflict === true && data.message) {
+        removeThinkingMessage();
+        const alternativeMsg: ExtendedMessage = {
+          _id: Math.random().toString(36).substring(2),
+          text: data.message,
+          createdAt: new Date(),
+          user: { _id: 2, name: 'Cheffy' },
+          messageType: MESSAGE_TYPE_DIETARY_ALTERNATIVE,
+          confirmationData: {
+            prompt: userMessage,
+            ingredientList: ingredientList || [],
+          },
+        };
+        setMessages((previousMessages) =>
+          GiftedChat.append(previousMessages, [alternativeMsg]),
+        );
+        return;
       } else if (data.error) {
         botText = `Error: ${data.error}`;
       } else {
@@ -563,7 +580,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
     if (choice === 'yes') {
       const userResponseMsg: ExtendedMessage = {
         _id: Math.random().toString(36).substring(2),
-        text: 'Yes, generate alternative',
+        text: 'Allow Alternatives',
         createdAt: new Date(),
         user: { _id: 1, name: 'User' },
       };
@@ -682,7 +699,7 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
               style={[styles.fullWidthBtn, styles.yesBtn]}
               onPress={() => handleDietaryAlternativeChoice(currentMessage._id, currentMessage.confirmationData, 'yes')}
             >
-              <Text style={styles.fullWidthBtnText}>Yes, generate alternative</Text>
+              <Text style={styles.fullWidthBtnText}>Allow Alternatives</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.fullWidthBtn, styles.noBtn]}
