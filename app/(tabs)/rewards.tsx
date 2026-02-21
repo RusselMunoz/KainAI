@@ -65,7 +65,7 @@ export default function RewardsScreen() {
   const { stats, updateStats, refreshStats, loading } = useUser();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTier, setSelectedTier] = useState<1 | 2 | 3>(1);
-  const [showDebug, setShowDebug] = useState(__DEV__); // Show debug panel in dev mode
+  const [showDebug, setShowDebug] = useState(false); // Keep debug panel inaccessible unless manually re-enabled in code
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -384,7 +384,7 @@ export default function RewardsScreen() {
         )}
 
         {/* Debug Panel - Only visible in DEV mode */}
-        {showDebug && (
+        {__DEV__ && showDebug && (
           <View style={styles.debugPanel}>
             <View style={styles.debugHeader}>
               <Feather name="cpu" size={18} color="#e74c3c" />

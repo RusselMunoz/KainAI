@@ -499,10 +499,113 @@ app.post('/api/chat', async (req, res) => {
 
     // ==================== REQUEST ROUTING ====================
     console.log('🔥 ROUTING REQUEST:', { confirmed, promptStart: prompt?.slice(0, 60) });
-    
+
+    const looksLikeCasualChat = (rawPrompt, ingredients) => {
+      const promptText = String(rawPrompt || '').trim();
+      const lowerPrompt = promptText.toLowerCase();
+      const ingredientsArray = Array.isArray(ingredients) ? ingredients.filter(Boolean) : [];
+      const joinedIngredients = ingredientsArray.join(' ').toLowerCase();
+      const combinedText = `${lowerPrompt} ${joinedIngredients}`.trim();
+
+      if (!combinedText) return false;
+
+      const hasComma = promptText.includes(',') || ingredientsArray.some((item) => String(item).includes(','));
+      const foodWordsPattern = /\b(chicken|beef|pork|fish|shrimp|egg|eggs|milk|cheese|butter|garlic|onion|tomato|rice|pasta|bread|flour|potato|carrot|pepper|salt|sugar|oil|olive|spinach|broccoli|mushroom|beans|lentils|tofu|basil|cilantro|parsley|lemon|lime)\b/i;
+      const hasFoodWord = foodWordsPattern.test(combinedText);
+      const looksLikeGreeting = /^(hi|hello|hey|yo|sup|good morning|good afternoon|good evening|how are you)\b/i.test(lowerPrompt);
+      const looksLikeQuestion = /\?/.test(promptText) || /^(what|how|why|when|where|who|can|could|would|should|is|are|do|does|did)\b/i.test(lowerPrompt);
+      const hasListShape = hasComma || ingredientsArray.length >= 2;
+
+      return !hasListShape && !hasFoodWord && (looksLikeGreeting || looksLikeQuestion);
+    };
+
+    // CASE 0: Pre-check for casual conversation before ingredient logic
+    if (confirmed === undefined || confirmed === null) {
+      const originalMessage = String(prompt || '').trim();
+      const classifierInput = originalMessage || String(ingredientList?.join(', ') || '').trim();
+
+      if (classifierInput && API_KEY) {
+        try {
+          const classifierCall = await fetchFn(`${BASE}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${API_KEY}`
+            },
+            body: JSON.stringify({
+              model: MODEL,
+              messages: [
+                {
+                  role: 'system',
+                  content: `You are a classifier. Reply only with YES or NO. Is this message a list of food ingredients? Message: ${classifierInput}`
+                }
+              ],
+              temperature: 0,
+              max_tokens: 5
+            })
+          });
+
+          if (classifierCall.ok) {
+            const classifierJson = await classifierCall.json();
+            const classifierReply = String(classifierJson?.choices?.[0]?.message?.content || '').trim().toUpperCase();
+
+            if (classifierReply.startsWith('NO')) {
+              const casualReplyCall = await fetchFn(`${BASE}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${API_KEY}`
+                },
+                body: JSON.stringify({
+                  model: MODEL,
+                  messages: [
+                    {
+                      role: 'system',
+                      content: "You are Chef C, a friendly professional chef assistant. Respond naturally and briefly to the user's message. If they seem interested in cooking, encourage them to share their ingredients."
+                    },
+                    {
+                      role: 'user',
+                      content: originalMessage || classifierInput
+                    }
+                  ],
+                  temperature: 0.5,
+                  max_tokens: 120
+                })
+              });
+
+              if (casualReplyCall.ok) {
+                const casualReplyJson = await casualReplyCall.json();
+                const casualResponse = String(casualReplyJson?.choices?.[0]?.message?.content || '').trim();
+                return res.json({
+                  ok: true,
+                  needsConfirmation: false,
+                  response: casualResponse || 'Hey chef! Share your ingredients when you are ready, and I can build a recipe for you.'
+                });
+              }
+
+              return res.json({
+                ok: true,
+                needsConfirmation: false,
+                response: 'Hey chef! Share your ingredients when you are ready, and I can build a recipe for you.'
+              });
+            }
+          }
+        } catch (case0Err) {
+          console.log('CASE 0: Pre-check failed, continuing to Case 1:', case0Err?.message || case0Err);
+        }
+      }
+    }
     // CASE 1: Initial ingredient submission (confirmed is undefined/null)
     if (confirmed === undefined || confirmed === null) {
-      console.log('📋 CASE 1: Initial submission - asking for confirmation');
+      if (looksLikeCasualChat(prompt, ingredientList)) {
+        console.log('CASE 1 FALLBACK: Casual message detected, skipping ingredient confirmation');
+        return res.json({
+          ok: true,
+          needsConfirmation: false,
+          response: 'Hey chef! I can help with recipes, but first send your ingredients as a list (for example: "chicken, garlic, rice"). If you want cooking guidance, include the ingredients you have and I will take it from there.'
+        });
+      }
+      console.log('CASE 1: Initial submission - asking for confirmation');
       const dietaryCustomRules = tokenizeRestrictionText(userProfile.dietary_custom).map((term) => ({ term, source: 'dietary_custom' }));
       const allergyRules = [
         ...userProfile.dietary_allergies
@@ -1256,4 +1359,5 @@ app.get('/api/community/search', async (req, res) => {
 const port = process.env.PORT || 5173;
 const server = app.listen(port, '0.0.0.0', () => console.log(`Groq API server listening on http://0.0.0.0:${port}`));
 server.keepAliveTimeout = 120000;
+
 
