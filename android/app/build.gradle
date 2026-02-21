@@ -125,12 +125,16 @@ android {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
-        }
-    }
-    androidResources {
-        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
-    }
-}
+            pickFirst 'lib/arm64-v8a/libworklets.so'
+            pickFirst 'lib/armeabi-v7a/libworklets.so'
+            pickFirst 'lib/x86/libworklets.so'
+            pickFirst 'lib/x86_64/libworklets.so'
+            }
+            }
+            androidResources {
+                ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+                }
+                }
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
 // Accepts values in comma delimited lists, example:

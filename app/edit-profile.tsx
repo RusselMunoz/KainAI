@@ -74,7 +74,18 @@ export default function EditProfileScreen() {
   // Sync local state when global profile loads
   // Uses individual field dependencies to ensure sync when data actually changes
   useEffect(() => {
-    if (!contextLoading && !hasInitialized.current) {
+    const hasMeaningfulGlobalData = Boolean(
+      (globalProfile.displayName && globalProfile.displayName.trim()) ||
+      (globalProfile.bio && globalProfile.bio.trim()) ||
+      (globalProfile.photoURL && globalProfile.photoURL.trim()) ||
+      (globalProfile.dietaryPreferences && globalProfile.dietaryPreferences.length > 0) ||
+      (globalProfile.allergies && globalProfile.allergies.length > 0) ||
+      (globalProfile.customDietaryText && globalProfile.customDietaryText.trim()) ||
+      (globalProfile.customAllergyText && globalProfile.customAllergyText.trim()) ||
+      globalProfile.cookingLevel !== 'Beginner'
+    );
+
+    if (!contextLoading && (!hasInitialized.current || hasMeaningfulGlobalData)) {
       console.log('[EditProfile] Initializing from global profile:', {
         displayName: globalProfile.displayName,
         bio: globalProfile.bio,
@@ -83,12 +94,17 @@ export default function EditProfileScreen() {
         cookingLevel: globalProfile.cookingLevel,
       });
       setProfile({
+        ...defaultProfile,
         ...globalProfile,
         displayName: globalProfile.displayName ?? '',
+        dietaryPreferences: globalProfile.dietaryPreferences ?? [],
+        allergies: globalProfile.allergies ?? [],
         customDietaryText: globalProfile.customDietaryText || '',
         customAllergyText: globalProfile.customAllergyText || '',
       });
-      hasInitialized.current = true;
+      if (hasMeaningfulGlobalData) {
+        hasInitialized.current = true;
+      }
     }
   }, [contextLoading, globalProfile.displayName, globalProfile.bio, globalProfile.photoURL, 
       globalProfile.dietaryPreferences, globalProfile.allergies, globalProfile.cookingLevel,
@@ -125,7 +141,7 @@ export default function EditProfileScreen() {
     try {
       // Using local server proxy to avoid CORS issues
       const API_BASE = Platform.select({
-        android: 'http://10.0.2.2:5173',
+        android: 'http://localhost:5173',
         ios: 'http://localhost:5173',
         default: 'http://localhost:5173',
       });

@@ -32,7 +32,7 @@ const screenW = Dimensions.get('window').width;
 
 // API base URL
 const API_BASE = Platform.select({
-  android: 'http://10.0.2.2:5173',
+  android: 'http://localhost:5173',
   ios: 'http://localhost:5173',
   default: 'http://localhost:5173',
 });

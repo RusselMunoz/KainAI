@@ -21,7 +21,7 @@ const CLOUD_NAME = 'dgqo8swpb';
 const cld = new Cloudinary({ cloud: { cloudName: CLOUD_NAME } });
 
 const API_BASE = Platform.select({
-  android: 'http://10.0.2.2:5173',
+  android: 'http://localhost:5173',
   default: 'http://localhost:5173',
 });
 

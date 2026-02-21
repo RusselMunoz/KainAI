@@ -9,7 +9,7 @@ import type { User, UserLevel } from '../types';
 
 // API base URL for backend fallback
 const API_BASE = Platform.select({
-  android: 'http://10.0.2.2:5173',
+  android: 'http://localhost:5173',
   ios: 'http://localhost:5173',
   default: 'http://localhost:5173',
 });

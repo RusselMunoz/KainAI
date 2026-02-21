@@ -46,7 +46,7 @@ const MESSAGE_TYPE_DIETARY_ALTERNATIVE = 'dietary_alternative';
 
 // Use local server proxy - Android emulator uses 10.0.2.2 to reach localhost
 const API_BASE = Platform.select({
-  android: 'http://10.0.2.2:5173',
+  android: 'http://localhost:5173',
   ios: 'http://localhost:5173',
   default: 'http://localhost:5173',
 });

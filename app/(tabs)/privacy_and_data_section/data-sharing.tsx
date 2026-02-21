@@ -12,12 +12,12 @@ export default function DataSharing() {
 
       <Text style={styles.subtitle}>Public Community Sharing</Text>
       <Text style={styles.text}>
-        When you choose to "Post to Community," certain data becomes visible to other users, including your **Username**, **Chef Level**, **Recipe Ratings**, and any photos or comments you attach to your completed meals.
+        When you choose to "Post to Community," certain data becomes visible to other users, including your <Text style={styles.boldText}>Username</Text>, <Text style={styles.boldText}>Chef Level</Text>, <Text style={styles.boldText}>Recipe Ratings</Text>, and any photos or comments you attach to your completed meals.
       </Text>
 
       <Text style={styles.subtitle}>Private Data Protection</Text>
       <Text style={styles.text}>
-        Your personal email, precise location, and private recipe archive (items you have not posted) are **never** shared with other users or third-party advertisers. Your "Not Done" list is for your eyes only.
+        Your personal email, precise location, and private recipe archive (items you have not posted) are <Text style={styles.boldText}>never</Text> shared with other users or third-party advertisers. Your "Not Done" list is for your eyes only.
       </Text>
 
       <Text style={styles.subtitle}>User Control</Text>
@@ -48,6 +48,10 @@ const styles = StyleSheet.create({
     marginBottom: 16, 
     color: '#18b66f',
     letterSpacing: 0.5 
+  },
+  boldText: {
+    fontWeight: 'bold',
+    color: '#18b66f'
   },
   subtitle: { 
     fontSize: 17, 

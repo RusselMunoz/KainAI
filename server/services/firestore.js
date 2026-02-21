@@ -249,7 +249,7 @@ async function updateUserData(userId, updates) {
   // Filter out undefined values and add updated_at timestamp
   const filteredUpdates = {};
   const allowedFields = [
-    'displayName', 'username', 'bio', 'photoURL',
+    'displayName', 'username', 'bio', 'photoURL', 'email',
     'dietary_preferences', 'dietary_allergies', 'dietary_custom', 'allergy_custom',
     'cooking_skills', 'onboardingComplete', 'level', 'xp',
     'recipesCompleted', 'postsCreated', 'totalLikesReceived', 'totalSaves'

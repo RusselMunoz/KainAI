@@ -10,8 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function Layout() {
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff7f0' }} edges={['top']}>
       <Stack screenOptions={{ headerShown: false }} />
     </SafeAreaView>
   );
 }
+

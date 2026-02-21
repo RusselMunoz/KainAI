@@ -44,7 +44,7 @@ const LoadingFallback = () => (
 const TABS = ['Chat', 'Recipes', 'Community', 'Awards'];
 const screenW = Dimensions.get('window').width;
 const API_BASE = Platform.select({
-  android: 'http://10.0.2.2:5173',
+  android: 'http://localhost:5173',
   ios: 'http://localhost:5173',
   default: 'http://localhost:5173',
 });
@@ -689,13 +689,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   progressBadgeText: { fontSize: 12, color: '#92400e', fontWeight: '500' },
-  recipeMetaRow: { flexDirection: 'row', marginTop: 12, gap: 8 },
+  recipeMetaRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 8 },
   chip: {
     backgroundColor: '#fff3ec',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
     marginRight: 8,
+    flexShrink: 1,
   },
   chipText: { color: '#7a4b2b', fontWeight: '600' },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 },

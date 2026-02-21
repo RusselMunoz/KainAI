@@ -27,9 +27,16 @@ export default function EndStep() {
       const name = (await AsyncStorage.getItem('onboard_name')) || 'User';
       const prefs = (await AsyncStorage.getItem('onboard_prefs')) || 'None';
       const allergies = (await AsyncStorage.getItem('onboard_allergies')) || 'None';
-      const level = (await AsyncStorage.getItem('onboard_level')) || 'Beginner';
+      const rawLevel = (await AsyncStorage.getItem('onboard_level')) || 'Beginner';
+      const normalizedLevelMap: Record<string, string> = {
+        beginner: 'Beginner',
+        intermediate: 'Intermediate',
+        advanced: 'Advanced',
+        expert: 'Expert',
+      };
+      const normalizedLevel = normalizedLevelMap[rawLevel.toLowerCase()] || rawLevel;
 
-      const final = { name, prefs, allergies, level };
+      const final = { name, prefs, allergies, level: normalizedLevel };
       if (!cancelled) setProfile(final);
 
       try {
@@ -44,7 +51,8 @@ export default function EndStep() {
           photoURL: null,
           dietary_preferences: prefsArray,
           dietary_allergies: allergiesArray,
-          cooking_skills: level,
+          cooking_skills: [normalizedLevel],
+          level: normalizedLevel,
         };
 
         await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(userProfile));

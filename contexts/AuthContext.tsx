@@ -503,10 +503,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       // Read onboarding data from PROFILE_KEY (saved by endstep.tsx before calling this)
       let onboardingData: {
+        email?: string;
         displayName?: string;
         dietary_preferences?: string[];
         dietary_allergies?: string[];
         cooking_skills?: string[];
+        level?: string;
       } = {};
       
       try {
@@ -514,13 +516,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (profileStr) {
           const profile = JSON.parse(profileStr);
           console.log('[Auth] Read onboarding profile from AsyncStorage:', profile);
-          
+
+          const dietaryPreferences = Array.isArray(profile.dietary_preferences)
+            ? profile.dietary_preferences
+            : Array.isArray(profile.dietaryPreferences)
+              ? profile.dietaryPreferences
+              : [];
+
+          const dietaryAllergies = Array.isArray(profile.dietary_allergies)
+            ? profile.dietary_allergies
+            : Array.isArray(profile.allergies)
+              ? profile.allergies
+              : [];
+
+          const rawCookingSkills = profile.cooking_skills ?? profile.cookingLevel;
+          const cookingSkills = Array.isArray(rawCookingSkills)
+            ? rawCookingSkills.filter(Boolean)
+            : typeof rawCookingSkills === 'string' && rawCookingSkills.trim()
+              ? [rawCookingSkills]
+              : [];
+
+          const level = typeof profile.level === 'string' && profile.level.trim()
+            ? profile.level
+            : cookingSkills[0];
+
           // Map UserProfile format to Firestore format
           onboardingData = {
-            displayName: profile.displayName || undefined,
-            dietary_preferences: profile.dietary_preferences || [],
-            dietary_allergies: profile.dietary_allergies || [],
-            cooking_skills: profile.cooking_skills ? [profile.cooking_skills] : [],
+            email: user.email || undefined,
+            displayName: profile.displayName || profile.name || undefined,
+            dietary_preferences: dietaryPreferences,
+            dietary_allergies: dietaryAllergies,
+            cooking_skills: cookingSkills,
+            level,
           };
         }
       } catch (e) {
@@ -544,6 +571,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         try {
           const updatePayload = {
             onboardingComplete: true,
+            email: user.email || undefined,
             ...onboardingData,
           };
           console.log('[Auth] Saving onboarding data to Firestore:', updatePayload);

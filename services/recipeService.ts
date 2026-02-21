@@ -9,7 +9,7 @@ import type { Recipe, RecipeStatus, CookingProgress, Ingredient, Instruction, Di
 
 // API base URL for backend
 const API_BASE = Platform.select({
-  android: 'http://10.0.2.2:5173',
+  android: 'http://localhost:5173',
   ios: 'http://localhost:5173',
   default: 'http://localhost:5173',
 });
