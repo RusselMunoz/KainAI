@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Platform, View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, Keyboard, ActivityIndicator, Dimensions } from 'react-native';
-import { GiftedChat, IMessage, Send, Bubble, InputToolbar } from 'react-native-gifted-chat';
+import { GiftedChat, IMessage, Bubble } from 'react-native-gifted-chat';
 import axios from 'axios';
 import { validateIngredient } from '../services/profanity-filter.service';
 import recipeService from '../services/recipe.service';
@@ -793,34 +793,42 @@ export function ChatScreen({ onRecipeGenerated }: ChatScreenProps) {
             ? 'Please select an option above...' 
             : 'Type your ingredients...'
         }}
-        renderSend={(props) => {
-          // Don't show send button if no text or if confirmation is active
-          if (!inputText.trim() || hasActiveConfirmation) {
-            return null;
-          }
-          return (
-            <TouchableOpacity 
-              style={styles.sendContainer}
-              onPress={() => {
-                console.log('🟢 Custom Send button pressed');
-                if (inputText.trim()) {
-                  const message: ExtendedMessage = {
-                    _id: Math.random().toString(36).substring(2),
-                    text: inputText.trim(),
-                    createdAt: new Date(),
-                    user: { _id: 1 },
-                  };
-                  onSend([message]);
-                  Keyboard.dismiss();
-                }
-              }}
-            >
-              <View style={styles.sendButton}>
-                <Text style={styles.sendButtonText}>Send</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
+        renderInputToolbar={() => (
+          <View style={styles.inputToolbar}>
+            <View style={styles.composerRow}>
+              <TextInput
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder={hasActiveConfirmation ? 'Please select an option above...' : 'Type your ingredients...'}
+                placeholderTextColor="#999"
+                style={styles.composerInput}
+                editable={!hasActiveConfirmation}
+              />
+              {!hasActiveConfirmation && inputText.trim() ? (
+                <TouchableOpacity
+                  style={styles.sendContainer}
+                  onPress={() => {
+                    console.log('ðŸŸ¢ Custom Send button pressed');
+                    if (inputText.trim()) {
+                      const message: ExtendedMessage = {
+                        _id: Math.random().toString(36).substring(2),
+                        text: inputText.trim(),
+                        createdAt: new Date(),
+                        user: { _id: 1 },
+                      };
+                      onSend([message]);
+                      Keyboard.dismiss();
+                    }
+                  }}
+                >
+                  <View style={styles.sendButton}>
+                    <Text style={styles.sendButtonText}>Send</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        )}
       />
     </View>
   );
@@ -858,19 +866,51 @@ const styles = StyleSheet.create({
   sendContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
-    marginBottom: 5,
+    paddingRight: 8,
+    paddingBottom: 0,
+    height: 44,
   },
   sendButton: {
-    backgroundColor: '#2bb673',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    width: 56,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#79d2a2',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sendButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  inputToolbar: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    borderTopWidth: 0,
+    backgroundColor: '#ececec',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  inputToolbarPrimary: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  composerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  composerInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    fontSize: 15,
+    color: '#000000',
   },
   // Bubble styles
   botBubbleWrapper: {

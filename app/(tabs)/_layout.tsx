@@ -6,13 +6,14 @@
 
 // For no bottom tabs (default)
 import { Stack } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 
 export default function Layout() {
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff7f0' }} edges={['top']}>
+    <>
+      <StatusBar style="light" backgroundColor="transparent" translucent={false} />
       <Stack screenOptions={{ headerShown: false }} />
-    </SafeAreaView>
+    </>
   );
 }
 

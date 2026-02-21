@@ -22,7 +22,7 @@ export default function HealthData() {
 
       <Text style={styles.subtitle}>Personal Health Privacy</Text>
       <Text style={styles.text}>
-        While you may share your cooked meals with the community, your specific nutritional goals, weight-management progress, or allergy profiles are **never** made public. Only the recipe itself and your rating are shared.
+        While you may share your cooked meals with the community, your specific nutritional goals, weight-management progress, or allergy profiles are <Text style={styles.boldText}>never</Text> made public. Only the recipe itself and your rating are shared.
       </Text>
 
       <Text style={styles.subtitle}>Medical Disclaimer</Text>
@@ -48,6 +48,9 @@ const styles = StyleSheet.create({
     marginBottom: 16, 
     color: '#18b66f',
     letterSpacing: 0.5 
+  },
+  boldText: {
+    fontWeight: 'bold',
   },
   subtitle: { 
     fontSize: 17, 

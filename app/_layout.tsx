@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter, useSegments, Redirect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, StatusBar as RNStatusBar } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -66,14 +66,16 @@ function RootLayoutNav() {
 
   console.log('[Layout] Rendering Stack');
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="Login" options={{ presentation: 'modal', title: 'Login', headerShown: false }} />
-        <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <View style={{ flex: 1, paddingTop: RNStatusBar.currentHeight || 0 }}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="Login" options={{ presentation: 'modal', title: 'Login', headerShown: false }} />
+          <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
+        </Stack>
+        <StatusBar style="light" backgroundColor="transparent" translucent={true} />
+      </ThemeProvider>
+    </View>
   );
 }
 
