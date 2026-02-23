@@ -8,6 +8,8 @@ import { useUser } from '../../../contexts/UserContext';
 
 // Must match UserContext storage key
 const PROFILE_KEY = '@cheffy_user_profile';
+const KNOWN_DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Halal', 'Kosher'];
+const KNOWN_ALLERGY_OPTIONS = ['Nuts', 'Shellfish', 'Eggs', 'Soy', 'Wheat', 'Fish', 'Sesame'];
 
 export default function EndStep() {
   const router = useRouter();
@@ -40,9 +42,13 @@ export default function EndStep() {
       if (!cancelled) setProfile(final);
 
       try {
-        // Parse comma-separated strings into arrays for UserContext format
-        const prefsArray = prefs === 'None' ? [] : prefs.split(',').map(s => s.trim()).filter(Boolean);
-        const allergiesArray = allergies === 'None' ? [] : allergies.split(',').map(s => s.trim()).filter(Boolean);
+        // Parse comma-separated strings, then split into known chip values vs custom free-form values
+        const parsedPrefs = prefs === 'None' ? [] : prefs.split(',').map(s => s.trim()).filter(Boolean);
+        const parsedAllergies = allergies === 'None' ? [] : allergies.split(',').map(s => s.trim()).filter(Boolean);
+        const prefsArray = parsedPrefs.filter(pref => KNOWN_DIETARY_OPTIONS.includes(pref));
+        const allergiesArray = parsedAllergies.filter(allergy => KNOWN_ALLERGY_OPTIONS.includes(allergy));
+        const customDietaryItems = parsedPrefs.filter(pref => !KNOWN_DIETARY_OPTIONS.includes(pref));
+        const customAllergyItems = parsedAllergies.filter(allergy => !KNOWN_ALLERGY_OPTIONS.includes(allergy));
 
         // Save in snake_case format for backend compatibility
         const userProfile = {
@@ -51,6 +57,8 @@ export default function EndStep() {
           photoURL: null,
           dietary_preferences: prefsArray,
           dietary_allergies: allergiesArray,
+          customDietaryText: customDietaryItems.length > 0 ? customDietaryItems.join(', ') : '',
+          customAllergyText: customAllergyItems.length > 0 ? customAllergyItems.join(', ') : '',
           cooking_skills: [normalizedLevel],
           level: normalizedLevel,
         };
