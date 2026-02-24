@@ -240,8 +240,8 @@ export function UserProvider({ children }: UserProviderProps) {
               dietaryPreferences: normalizePreferences(firestoreUser.dietary_preferences || [], VALID_DIETARY_OPTIONS),
               allergies: normalizePreferences(firestoreUser.dietary_allergies || [], VALID_ALLERGY_OPTIONS),
               cookingLevel: normalizeCookingLevel(firestoreUser.cooking_skills, firestoreUser.level),
-              customDietaryText: firestoreUser.dietary_custom || '',
-              customAllergyText: firestoreUser.allergy_custom || '',
+              customDietaryText: firestoreUser.dietary_custom || firestoreUser.customDietaryText || '',
+              customAllergyText: firestoreUser.allergy_custom || firestoreUser.customAllergyText || '',
             };
             console.log('[UserContext] Normalized profile - dietaryPreferences:', firestoreProfile.dietaryPreferences, 'allergies:', firestoreProfile.allergies, 'cookingLevel:', firestoreProfile.cookingLevel);
             
@@ -293,8 +293,8 @@ export function UserProvider({ children }: UserProviderProps) {
             Array.isArray(rawCookingSkills) ? rawCookingSkills : undefined,
             typeof rawCookingSkills === 'string' ? rawCookingSkills : undefined
           ),
-          customDietaryText: parsedProfile.customDietaryText || '',
-          customAllergyText: parsedProfile.customAllergyText || '',
+          customDietaryText: parsedProfile.customDietaryText || parsedProfile.dietary_custom || '',
+          customAllergyText: parsedProfile.customAllergyText || parsedProfile.allergy_custom || '',
         };
         console.log('[UserContext] Step 6a: About to call setProfileState with AsyncStorage data...');
         setProfileState(normalizedProfile);

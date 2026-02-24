@@ -509,6 +509,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         dietary_allergies?: string[];
         cooking_skills?: string[];
         level?: string;
+        customDietaryText?: string;
+        customAllergyText?: string;
       } = {};
       
       try {
@@ -548,6 +550,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             dietary_allergies: dietaryAllergies,
             cooking_skills: cookingSkills,
             level,
+            customDietaryText: profile.customDietaryText || profile.dietary_custom || undefined,
+            customAllergyText: profile.customAllergyText || profile.allergy_custom || undefined,
           };
         }
       } catch (e) {
@@ -573,6 +577,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             onboardingComplete: true,
             email: user.email || undefined,
             ...onboardingData,
+            dietary_custom: onboardingData.customDietaryText,
+            allergy_custom: onboardingData.customAllergyText,
           };
           console.log('[Auth] Saving onboarding data to Firestore:', updatePayload);
           await userService.updateUser(user.uid, updatePayload);
