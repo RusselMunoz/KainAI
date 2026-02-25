@@ -18,7 +18,7 @@ KainAI is a cross-platform mobile application built with React Native (Expo) and
 - **Edit Profile**: Update your preferences anytime — pill selections sync across the app
 - **Dietary Enforcement**: Every recipe respects your saved dietary restrictions
 
-### 🎮 Gamified Experience
+### 🎮 Gamified Experience (Beta)
 - **Chef Levels**: Progress from Beginner to Master by completing recipes
 - **XP System**: Earn XP for generating and completing recipes
 - **Achievement System**: Unlock badges like "Ingredient Master" and "Streak Master"
