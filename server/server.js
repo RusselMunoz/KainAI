@@ -561,7 +561,7 @@ app.post('/api/chat', async (req, res) => {
                   messages: [
                     {
                       role: 'system',
-                      content: "You are Chef C, a friendly professional chef assistant. Respond naturally and briefly to the user's message. If they seem interested in cooking, encourage them to share their ingredients."
+                      content: "You are Cheffy, a friendly professional chef assistant. Respond naturally and briefly to the user's message. If they seem interested in cooking, encourage them to share their ingredients."
                     },
                     {
                       role: 'user',

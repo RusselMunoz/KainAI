@@ -39,7 +39,7 @@ const ONBOARDING_KEY = '@kainai_onboarding_complete';
 const PROFILE_KEY = '@cheffy_user_profile';
 
 // Toggle for email/password login - set to true to enable
-export const ENABLE_EMAIL_PASSWORD_LOGIN = true;
+export const ENABLE_EMAIL_PASSWORD_LOGIN = false;
 
 // Google Sign-In web client ID - get from Firebase console
 const WEB_CLIENT_ID = '953646495667-lt8oouu1gl7982ki7uhbierg0616uhne.apps.googleusercontent.com';
@@ -422,7 +422,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const response = await GoogleSignin.signIn();
       
       if (!isSuccessResponse || !isSuccessResponse(response)) {
-        throw new Error('Google Sign-In was cancelled');
+        // Treat non-success Google response as a user cancellation.
+        return { success: false };
       }
 
       const { data } = response;
@@ -440,17 +441,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log('[Auth] Google Sign-In successful');
       return { success: true };
     } catch (error: any) {
-      console.error('[Auth] Google Sign-In error:', error);
-      
+      if (statusCodes && error?.code === statusCodes.SIGN_IN_CANCELLED) {
+        return { success: false };
+      }
+
       let errorMessage = 'Google Sign-In failed. Please try again.';
       
-      if (statusCodes && error.code === statusCodes.SIGN_IN_CANCELLED) {
-        errorMessage = 'Sign in was cancelled.';
-      } else if (statusCodes && error.code === statusCodes.IN_PROGRESS) {
+      if (statusCodes && error.code === statusCodes.IN_PROGRESS) {
         errorMessage = 'Sign in is already in progress.';
       } else if (statusCodes && error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         errorMessage = 'Google Play Services not available.';
       }
+
+      console.error('[Auth] Google Sign-In error:', error);
       
       return { success: false, error: errorMessage };
     } finally {

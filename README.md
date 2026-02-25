@@ -9,7 +9,7 @@ KainAI is a cross-platform mobile application built with React Native (Expo) and
 
 ### 🤖 AI Chat & Recipe Generation
 - **Ingredient-Based Recipes**: Input your available ingredients and receive custom-tailored recipes
-- **Conversational Chef**: Chat with Chef C, your AI chef assistant powered by Llama 3.3
+- **Conversational Chef**: Chat with Cheffy, your AI chef assistant powered by Llama 3.3
 - **Dietary Awareness**: Automatically detects and flags ingredient conflicts with your dietary preferences and allergies
 - **Instant Archiving**: Generated recipes are automatically saved to your personal log
 
